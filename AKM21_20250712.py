@@ -301,7 +301,7 @@ try:
                 print(TotalESP)
 
                 # Pastikan TotalESP memiliki tepat 300 data sebelum melakukan prediksi
-                if len(TotalESP) == 250:
+                if len(TotalESP) == 250: #--> sesuaikan dengan jumlah fitur
                     TotalESP = np.array(TotalESP).reshape(1, -1)
                     #prediksi knn
                     Y_predict = knn.predict(TotalESP)
