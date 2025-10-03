@@ -1,0 +1,351 @@
+{% extends 'base.html' %} {% block title %}Data Pengukuran{% endblock %} {% block content %}
+<div id="deleteConfirmModal" class="modal-overlay" style="display: none">
+	<div class="modal-content">
+		<h2>Konfirmasi Penghapusan</h2>
+		<p>
+			Apakah Anda yakin ingin menghapus data pasien <strong id="deletePatientName" style="color: #dc3545"></strong>?
+			Semua riwayat pengukurannya juga akan terhapus secara permanen.
+		</p>
+		<div class="modal-actions">
+			<button id="btnCancelDelete" class="btn-modal btn-secondary">Batal</button>
+			<button id="btnConfirmDelete" class="btn-modal btn-danger">Ya, Hapus</button>
+		</div>
+	</div>
+</div>
+<div id="editPatientModal" class="modal-overlay" style="display: none">
+	<div class="modal-content" style="text-align: left">
+		<h2>Edit Data Pasien</h2>
+		<form id="editPatientForm">
+			<input type="hidden" id="edit_patient_id" name="patient_id" />
+			<div class="form-row">
+				<div class="form-group">
+					<label for="edit_nama_lengkap">Nama Pasien</label>
+					<input type="text" id="edit_nama_lengkap" name="nama_lengkap" required />
+				</div>
+				<div class="form-group">
+					<label for="edit_jenis_kelamin">Jenis Kelamin</label>
+					<select id="edit_jenis_kelamin" name="jenis_kelamin">
+						<option value="Laki-laki">Laki-laki</option>
+						<option value="Perempuan">Perempuan</option>
+					</select>
+				</div>
+			</div>
+			<div class="form-row">
+				<div class="form-group">
+					<label for="edit_umur">Umur</label>
+					<input type="number" id="edit_umur" name="umur" required />
+				</div>
+				<div class="form-group">
+					<label for="edit_nik">NIK</label>
+					<input type="text" id="edit_nik" name="nik" required />
+				</div>
+			</div>
+			<div class="form-group">
+				<label for="edit_alamat">Alamat</label>
+				<input type="text" id="edit_alamat" name="alamat" required />
+			</div>
+			<div class="form-group">
+				<label for="edit_no_hp">No. HP</label>
+				<input type="text" id="edit_no_hp" name="no_hp" required />
+			</div>
+			<div class="modal-actions" style="justify-content: flex-end">
+				<button type="button" class="btn-modal btn-secondary" id="cancelEditBtn">Batal</button>
+				<button type="submit" class="btn-modal btn-primary">Simpan Perubahan</button>
+			</div>
+		</form>
+	</div>
+</div>
+<div id="patientListView">
+	<div class="page-header">
+		<h1 class="page-title">Data Pengukuran Pasien</h1>
+		<div class="header-actions">
+			<a href="#" id="exportSelectedBtn" class="btn-export-all disabled">Export Selected</a>
+			<a href="{{ url_for('export_all') }}" class="btn-export-all">Export All</a>
+		</div>
+	</div>
+
+	<div class="patient-list">
+		{% for patient in patients %}
+		<div class="patient-row" data-patient-id="{{ patient[0] }}" data-patient-name="{{ patient[1] }}">
+			<div class="patient-info">
+				<input type="checkbox" class="patient-checkbox" value="{{ patient[0] }}" />
+				<span class="patient-name">{{ patient[1] }}</span>
+			</div>
+			<div class="patient-meta">
+				<span class="last-measured">Pengukuran Terakhir: {{ patient[2].strftime('%d %b %Y, %H:%M') }}</span>
+				<div class="actions">
+					<a href="#" class="action-btn action-btn-edit">Edit</a>
+					<a href="#" class="action-btn action-btn-delete">Delete</a>
+					<a href="{{ url_for('export_patient', patient_id=patient[0]) }}" class="action-btn">Export</a>
+				</div>
+			</div>
+		</div>
+		{% else %}
+		<p>Belum ada data pengukuran yang tersimpan.</p>
+		{% endfor %}
+	</div>
+</div>
+
+<div id="patientDetailView" style="display: none">
+	<div class="page-header">
+		<button id="backToListBtn" class="btn-back"><i class="fas fa-arrow-left"></i> Kembali ke Daftar</button>
+		<h1 id="detailPatientName" class="page-title"></h1>
+	</div>
+	<div id="biodataContainer" class="form-container" style="margin-bottom: 25px">
+		<h3>Biodata Pasien</h3>
+		<div class="form-row">
+			<div class="form-group">
+				<p><strong>Nama Lengkap:</strong> <span id="bio_nama"></span></p>
+				<p><strong>NIK:</strong> <span id="bio_nik"></span></p>
+			</div>
+			<div class="form-group">
+				<p><strong>Umur:</strong> <span id="bio_umur"></span> Tahun</p>
+				<p><strong>Jenis Kelamin:</strong> <span id="bio_jenis_kelamin"></span></p>
+			</div>
+			<div class="form-group">
+				<p><strong>Alamat:</strong> <span id="bio_alamat"></span></p>
+				<p><strong>No. HP:</strong> <span id="bio_no_hp"></span></p>
+			</div>
+		</div>
+	</div>
+	<div class="chart-container">
+		<canvas id="measurementChart"></canvas>
+	</div>
+</div>
+
+{% endblock %} {% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+	$(document).ready(function () {
+		const listView = $("#patientListView");
+		const detailView = $("#patientDetailView");
+		const detailPatientName = $("#detailPatientName");
+		let measurementChart = null; // Variabel untuk menyimpan objek chart
+
+		// Saat baris pasien diklik
+		$(".patient-row").on("click", function (e) {
+			// Jangan picu jika yang diklik adalah checkbox atau tombol action
+			if ($(e.target).is("input, a")) {
+				return;
+			}
+
+			const patientId = $(this).data("patient-id");
+			const patientName = $(this).data("patient-name");
+
+			// Tampilkan nama pasien di judul
+			//detailPatientName.text(`Riwayat Pengukuran: ${patientName}`);
+
+			// Ambil data dari API
+			$.getJSON(`/api/patient_measurements/${patientId}`, function (data) {
+				// Ganti tampilan
+				listView.hide();
+				detailView.show();
+				const biodata = data.biodata;
+				$("#bio_nama").text(biodata.nama);
+				$("#bio_nik").text(biodata.nik);
+				$("#bio_umur").text(biodata.umur);
+				$("#bio_jenis_kelamin").text(biodata.jenis_kelamin);
+				$("#bio_alamat").text(biodata.alamat);
+				$("#bio_no_hp").text(biodata.no_hp);
+				// Hancurkan chart lama jika ada
+				if (measurementChart) {
+					measurementChart.destroy();
+				}
+
+				const chart_data = data.chart_data;
+				// Buat chart baru
+				const ctx = document.getElementById("measurementChart").getContext("2d");
+				measurementChart = new Chart(ctx, {
+					type: "line",
+					data: {
+						labels: chart_data.labels,
+						datasets: [
+							{
+								label: "Kolesterol",
+								data: chart_data.cholesterol,
+								borderColor: "rgb(255, 99, 132)",
+								backgroundColor: "rgba(255, 99, 132, 0.5)",
+								tension: 0.1,
+							},
+							{
+								label: "Asam Urat",
+								data: chart_data.uric_acid,
+								borderColor: "rgb(54, 162, 235)",
+								backgroundColor: "rgba(54, 162, 235, 0.5)",
+								tension: 0.1,
+							},
+							{
+								label: "Gula Darah",
+								data: chart_data.blood_sugar,
+								borderColor: "rgb(75, 192, 192)",
+								backgroundColor: "rgba(75, 192, 192, 0.5)",
+								tension: 0.1,
+							},
+						],
+					},
+					options: {
+						responsive: true,
+						plugins: {
+							legend: { position: "top" },
+							title: { display: true, text: "Grafik Riwayat Kesehatan" },
+						},
+					},
+				});
+			});
+		});
+		const editModal = $("#editPatientModal");
+
+		// 1. Saat tombol "Edit" di salah satu baris diklik
+		$(".action-btn-edit").on("click", function (e) {
+			e.preventDefault(); // Mencegah link default
+			e.stopPropagation(); // Mencegah event klik di baris (.patient-row)
+
+			const row = $(this).closest(".patient-row");
+			const patientId = row.data("patient-id");
+
+			// Ambil data terbaru pasien dari API
+			$.getJSON(`/api/patient/${patientId}`, function (data) {
+				// Isi form di dalam modal dengan data yang didapat
+				$("#edit_patient_id").val(data.id);
+				$("#edit_nama_lengkap").val(data.nama_lengkap);
+				$("#edit_jenis_kelamin").val(data.jenis_kelamin);
+				$("#edit_alamat").val(data.alamat);
+				$("#edit_umur").val(data.umur);
+				$("#edit_nik").val(data.nik);
+				$("#edit_no_hp").val(data.no_hp);
+
+				// Simpan patientId ke form untuk submit
+				$("#editPatientForm").data("patient-id", data.id);
+
+				// Tampilkan modal
+				editModal.css("display", "flex");
+			});
+		});
+
+		// 2. Saat form edit di-submit
+		$("#editPatientForm").on("submit", function (e) {
+			e.preventDefault();
+			const patientId = $(this).data("patient-id");
+			const formData = $(this).serialize();
+
+			$.ajax({
+				url: `/patient/edit/${patientId}`,
+				method: "POST",
+				data: formData,
+				success: function (response) {
+					if (response.status === "success") {
+						// Tutup modal
+						editModal.hide();
+						// Tampilkan notifikasi sukses
+						showNotification(response.message, "success"); // Asumsi Anda punya fungsi ini
+
+						// Update nama di daftar pasien secara real-time
+						const updatedName = $("#edit_nama_lengkap").val();
+						$(`.patient-row[data-patient-id=${patientId}] .patient-name`).text(updatedName);
+					}
+				},
+				error: function () {
+					showNotification("Gagal memperbarui data.", "danger");
+				},
+			});
+		});
+
+		// 3. Saat tombol "Batal" di modal diklik
+		$("#cancelEditBtn").on("click", function () {
+			editModal.hide();
+		});
+
+		// Tambahkan juga fungsi notifikasi jika belum ada
+		function showNotification(message, category) {
+			const flashMessage = $("<div></div>").addClass(`flash-message flash-${category}`).text(message);
+			$(".flash-messages-container").append(flashMessage);
+			setTimeout(() => {
+				flashMessage.fadeOut(500, function () {
+					$(this).remove();
+				});
+			}, 5000);
+		}
+		// --- LOGIKA UNTUK FITUR DELETE ---
+		$(".action-btn-delete").on("click", function (e) {
+			e.preventDefault();
+			e.stopPropagation();
+
+			// 1. Ambil data dari baris yang diklik
+			const row = $(this).closest(".patient-row");
+			const patientId = row.data("patient-id");
+			const patientName = row.data("patient-name");
+
+			// 2. Masukkan nama pasien ke dalam modal dan tampilkan
+			$("#deletePatientName").text(patientName);
+			$("#deleteConfirmModal").css("display", "flex");
+
+			// 3. Simpan ID pasien di tombol konfirmasi untuk digunakan nanti
+			$("#btnConfirmDelete").data("patient-id", patientId);
+			$("#btnConfirmDelete").data("row-element", row); // Simpan juga elemen barisnya
+		});
+
+		// Event handler untuk tombol "Ya, Hapus" di dalam modal
+		$("#btnConfirmDelete").on("click", function () {
+			const patientId = $(this).data("patient-id");
+			const row = $(this).data("row-element");
+
+			$.ajax({
+				url: `/patient/delete/${patientId}`,
+				method: "POST",
+				success: function (response) {
+					if (response.status === "success") {
+						showNotification(response.message, "success");
+						// Hilangkan baris dari tabel
+						row.fadeOut(500, function () {
+							$(this).remove();
+						});
+					}
+				},
+				error: function () {
+					showNotification("Gagal menghapus data.", "danger");
+				},
+				complete: function () {
+					// Selalu sembunyikan modal setelah selesai
+					$("#deleteConfirmModal").hide();
+				},
+			});
+		});
+
+		// Event handler untuk tombol "Batal"
+		$("#btnCancelDelete").on("click", function () {
+			$("#deleteConfirmModal").hide();
+		});
+
+		// --- LOGIKA UNTUK FITUR EXPORT SELECTED ---
+		const exportSelectedBtn = $("#exportSelectedBtn");
+
+		// Cek setiap kali checkbox diubah
+		$(".patient-checkbox").on("change", function () {
+			// Kumpulkan semua checkbox yang dicentang
+			const selectedCheckboxes = $(".patient-checkbox:checked");
+
+			if (selectedCheckboxes.length > 0) {
+				const selectedIds = selectedCheckboxes
+					.map(function () {
+						return $(this).val();
+					})
+					.get();
+
+				const exportUrl = `{{ url_for('export_selected') }}?ids=${selectedIds.join(",")}`;
+
+				// Aktifkan tombol: hapus class disabled dan atur URL
+				exportSelectedBtn.attr("href", exportUrl).removeClass("disabled");
+			} else {
+				// Nonaktifkan tombol: hapus URL dan tambahkan class disabled
+				exportSelectedBtn.removeAttr("href").addClass("disabled");
+			}
+		});
+
+		// Saat tombol "Kembali" diklik
+		$("#backToListBtn").on("click", function () {
+			detailView.hide();
+			listView.show();
+		});
+	});
+</script>
+{% endblock %}

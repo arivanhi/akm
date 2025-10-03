@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>{% block title %}Sistem Monitoring Kesehatan{% endblock %}</title>
+		<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+		<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" />
+	</head>
+	<body>
+		<div class="flash-messages-container">
+			{% with messages = get_flashed_messages(with_categories=true) %} {% if messages %} {% for category, message in
+			messages %}
+			<div class="flash-message flash-{{ category }}">{{ message }}</div>
+			{% endfor %} {% endif %} {% endwith %}
+		</div>
+
+		<div class="wrapper">
+			<aside class="sidebar" id="sidebar">
+				<div class="sidebar-header">
+					<h3>AKM Portable</h3>
+					<button type="button" id="sidebarCollapse" class="btn btn-info">
+						<i class="fas fa-align-left"></i>
+					</button>
+				</div>
+				<ul class="list-unstyled components">
+					<li>
+						<a href="{{ url_for('dashboard') }}"><i class="fas fa-home"></i> <span>Home</span></a>
+					</li>
+					<li>
+						<a href="{{ url_for('measure') }}"><i class="fas fa-heartbeat"></i> <span>Mengukur</span></a>
+					</li>
+					<li>
+						<a href="{{ url_for('data_pengukuran') }}"
+							><i class="fas fa-chart-line"></i> <span>Data Pengukuran</span></a
+						>
+					</li>
+
+					{% if g.user and g.user[2] == 'admin' %}
+					<li>
+						<a href="#"><i class="fas fa-users-cog"></i> <span>Setting User</span></a>
+					</li>
+					{% endif %}
+					<li>
+						<a href="{{ url_for('logout') }}"><i class="fas fa-sign-out-alt"></i> <span>Logout</span></a>
+					</li>
+				</ul>
+				<div class="sidebar-footer">
+					<div class="footer-logos">
+						<img
+							src="https://upload.wikimedia.org/wikipedia/id/thumb/0/03/Logo_Udinus.png/1200px-Logo_Udinus.png"
+							alt="Logo Udinus"
+						/>
+						<img src="https://dinkes.semarangkota.go.id/asset/images/logo-dinkes.png" alt="Logo Dinkes" />
+					</div>
+					<p>Created by FT DINUS X DINKES</p>
+				</div>
+			</aside>
+
+			<div id="content">
+				<nav class="navbar navbar-expand-lg navbar-light bg-light">
+					<div class="container-fluid">
+						<div class="navbar-text ml-auto">
+							Selamat Datang, <strong>{{ g.user[1] if g.user else 'Tamu' }}</strong> (Role:
+							<strong>{{ g.user[2] if g.user else '-' }}</strong>)
+						</div>
+					</div>
+				</nav>
+
+				<div class="content-area">{% block content %}{% endblock %}</div>
+			</div>
+		</div>
+
+		<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+		<script>
+			$(document).ready(function () {
+				$("#sidebarCollapse").on("click", function () {
+					$("#sidebar").toggleClass("active");
+					$("#content").toggleClass("active");
+				});
+			});
+		</script>
+
+		{% block scripts %}{% endblock %}
+	</body>
+</html>

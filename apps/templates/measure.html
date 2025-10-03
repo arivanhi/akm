@@ -1,0 +1,315 @@
+{% extends 'base.html' %} {% block title %}Pengukuran Pasien{% endblock %} {% block content %}
+
+<div id="patientChoiceModal" class="modal-overlay">
+	<div class="modal-content">
+		<span class="modal-close-btn">&times;</span>
+
+		<h2>Status Pasien</h2>
+		<p>Apakah pasien sudah pernah melakukan pengukuran sebelumnya?</p>
+		<div class="modal-actions">
+			<button id="btnNewPatient" class="btn-modal btn-success">Belum, Pasien Baru</button>
+			<button id="btnExistingPatient" class="btn-modal btn-primary">Ya, Pasien Lama</button>
+		</div>
+	</div>
+</div>
+
+<div id="measurementChoiceModal" class="modal-overlay" style="display: none">
+	<div class="modal-content">
+		<h2>Pilih Jenis Pengukuran</h2>
+		<div class="measurement-buttons">
+			<button class="btn-measure" data-type="cholesterol" data-flag="1">Kolesterol</button>
+			<button class="btn-measure" data-type="asam_urat" data-flag="2">Asam Urat</button>
+			<button class="btn-measure" data-type="gula_darah" data-flag="3">Gula Darah</button>
+		</div>
+		<button id="btnFinishSession" class="btn-modal btn-danger" style="margin-top: 20px">Selesai Sesi</button>
+	</div>
+</div>
+
+<div id="measurementContent" style="display: none">
+	<h1 class="page-title">Pengukuran Pasien</h1>
+
+	<div id="existingPatientSection" style="display: none">
+		<div class="form-container">
+			<h3>Cari Pasien Terdaftar</h3>
+			<div class="form-group autocomplete">
+				<label for="search_patient_name">Nama Pasien</label>
+				<input type="text" id="search_patient_name" placeholder="Ketik nama pasien untuk mencari..." />
+				<div id="autocomplete-list" class="autocomplete-items"></div>
+			</div>
+		</div>
+	</div>
+
+	<div id="newPatientSection" style="display: none">
+		<form id="newPatientForm" class="form-container">
+			<h3>Data Pasien Baru</h3>
+			<div class="form-row">
+				<div class="form-group">
+					<label for="nama_pasien">Nama Pasien</label><input type="text" id="nama_pasien" name="nama_pasien" required />
+				</div>
+				<div class="form-group">
+					<label for="jenis_kelamin">Jenis Kelamin</label
+					><select id="jenis_kelamin" name="jenis_kelamin">
+						<option value="Laki-laki">Laki-laki</option>
+						<option value="Perempuan">Perempuan</option>
+					</select>
+				</div>
+				<div class="form-group">
+					<label for="alamat">Alamat</label><input type="text" id="alamat" name="alamat" required />
+				</div>
+			</div>
+			<div class="form-row">
+				<div class="form-group">
+					<label for="umur">Umur</label><input type="number" id="umur" name="umur" required />
+				</div>
+				<div class="form-group"><label for="nik">NIK</label><input type="text" id="nik" name="nik" required /></div>
+				<div class="form-group">
+					<label for="no_hp">No. HP</label><input type="text" id="no_hp" name="no_hp" required />
+				</div>
+			</div>
+			<button type="submit" class="btn-submit">Daftarkan Pasien</button>
+		</form>
+	</div>
+
+	<div id="measurementControl" class="form-container" style="display: none">
+		<div id="patientDetails" class="patient-details-container">
+			<h3>Detail Pasien</h3>
+			<p><strong>Nama:</strong> <span id="detail_nama"></span></p>
+			<p><strong>NIK:</strong> <span id="detail_nik"></span></p>
+			<p><strong>Umur:</strong> <span id="detail_umur"></span> Tahun</p>
+			<p><strong>Jenis Kelamin:</strong> <span id="detail_jenis_kelamin"></span></p>
+			<p><strong>Alamat:</strong> <span id="detail_alamat"></span></p>
+		</div>
+		<button id="btnStartSession" class="btn-submit">Mulai Sesi Pengukuran</button>
+	</div>
+
+	<div class="results-grid">
+		<div class="result-box" data-type="cholesterol">
+			<h4>Kolesterol</h4>
+			<p class="value">- mg/dL</p>
+		</div>
+		<div class="result-box" data-type="asam_urat">
+			<h4>Asam Urat</h4>
+			<p class="value">- mg/dL</p>
+		</div>
+		<div class="result-box" data-type="gula_darah">
+			<h4>Gula Darah</h4>
+			<p class="value">- mg/dL</p>
+		</div>
+	</div>
+</div>
+
+{% endblock %} {% block scripts %}
+<script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+<script>
+	$(document).ready(function () {
+		// --- FUNGSI NOTIFIKASI ---
+		function showNotification(message, category) {
+			const flashMessage = $("<div></div>").addClass(`flash-message flash-${category}`).text(message);
+			$(".flash-messages-container").append(flashMessage);
+			setTimeout(() => {
+				flashMessage.fadeOut(500, function () {
+					$(this).remove();
+				});
+			}, 5000);
+		}
+
+		// --- FUNGSI UNTUK MERESET SELURUH HALAMAN ---
+		function resetMeasurementPage() {
+			// 1. Sembunyikan semua bagian konten
+			$("#measurementContent").hide();
+			$("#newPatientSection").hide();
+			$("#existingPatientSection").hide();
+			$("#measurementControl").hide();
+
+			// 2. Reset data sesi
+			currentSessionData = { patient_id: null, results: {} };
+
+			// 3. Reset form input
+			$("#newPatientForm")[0].reset();
+			$("#search_patient_name").val("");
+
+			// 4. Reset box hasil pengukuran
+			$(".result-box .value").text("- mg/dL");
+			$(".result-box .btn-ok").remove();
+
+			// 5. Tampilkan kembali modal pilihan pasien awal
+			$("#patientChoiceModal").css("display", "flex");
+		}
+
+		// --- KONEKSI WEBSOCKET & STATE MANAGEMENT ---
+		const socket = io();
+		let currentSessionData = { patient_id: null, results: {} };
+		socket.on("connect", () => console.log("WebSocket Terhubung!"));
+
+		// --- FUNGSI BANTUAN ---
+		function showPatientDataAndControls(patient) {
+			currentSessionData.patient_id = patient.id;
+			$("#detail_nama").text(patient.nama);
+			$("#detail_nik").text(patient.nik);
+			$("#detail_alamat").text(patient.alamat);
+			$("#detail_umur").text(patient.umur);
+			$("#detail_jenis_kelamin").text(patient.jenis_kelamin);
+			$("#measurementControl").show();
+		}
+
+		// --- ALUR 1: MEMULAI HALAMAN ---
+		resetMeasurementPage(); // Mulai dengan kondisi bersih
+
+		// --- ALUR 2: PILIHAN PASIEN ---
+		$("#btnNewPatient").on("click", function () {
+			$("#patientChoiceModal").hide();
+			$("#measurementContent").show();
+			$("#newPatientSection").show();
+		});
+
+		$(".modal-close-btn").on("click", function () {
+			// Arahkan pengguna kembali ke halaman dashboard
+			window.location.href = "{{ url_for('dashboard') }}";
+		});
+
+		$("#btnExistingPatient").on("click", function () {
+			$("#patientChoiceModal").hide();
+			$("#measurementContent").show();
+			$("#existingPatientSection").show();
+		});
+
+		// --- ALUR 3: DAFTAR & CARI PASIEN ---
+		$("#newPatientForm").on("submit", function (event) {
+			event.preventDefault();
+			$.ajax({
+				url: "{{ url_for('measure') }}",
+				method: "POST",
+				data: $(this).serialize(),
+				success: function (response) {
+					if (response.status === "success") {
+						showNotification(response.message, "success");
+						$("#newPatientSection").hide();
+						showPatientDataAndControls(response.patient);
+					}
+				},
+				error: function (response) {
+					showNotification(response.responseJSON.message, "danger");
+				},
+			});
+		});
+
+		$("#search_patient_name").on("input", function () {
+			const query = $(this).val();
+			const autocompleteList = $("#autocomplete-list");
+			if (query.length < 2) {
+				autocompleteList.empty();
+				return;
+			}
+			$.getJSON(`/api/search_patients?q=${query}`, function (data) {
+				autocompleteList.empty();
+				$.each(data, function (index, patient) {
+					const item = $("<div></div>")
+						.html(`<strong>${patient.nama}</strong><br><small>NIK: ${patient.nik}</small>`)
+						.on("click", function () {
+							$("#existingPatientSection").hide();
+							showPatientDataAndControls(patient);
+							autocompleteList.empty();
+						});
+					autocompleteList.append(item);
+				});
+			});
+		});
+
+		// --- ALUR 4: MEMULAI & MENYELESAIKAN SESI PENGUKURAN ---
+		$("#btnStartSession").on("click", function () {
+			$("#measurementChoiceModal").css("display", "flex");
+			$(".result-box .btn-ok").remove();
+			$(".btn-measure")
+				.prop("disabled", false)
+				.text(function () {
+					let type = $(this).data("type");
+					if (type === "asam_urat") return "Asam Urat";
+					if (type === "gula_darah") return "Gula Darah";
+					return "Kolesterol";
+				})
+				.css("background-color", "white");
+		});
+
+		$("#btnFinishSession").on("click", function () {
+			$("#measurementChoiceModal").hide();
+			if (Object.keys(currentSessionData.results).length > 0 && currentSessionData.patient_id) {
+				console.log("Mengirim data untuk disimpan:", currentSessionData);
+				socket.emit("save_session_data", currentSessionData);
+			} else {
+				showNotification("Tidak ada data baru untuk disimpan. Sesi selesai.", "info");
+				// Langsung reset jika tidak ada data
+				resetMeasurementPage();
+			}
+		});
+
+		// --- ALUR 5: MENERIMA DATA DARI SERVER (WEBSOCKET) ---
+		$(".btn-measure").on("click", function () {
+			const type = $(this).data("type");
+			const flag = $(this).data("flag");
+			$(this).prop("disabled", true).text("Mengukur...");
+			socket.emit("start_measurement", { type: type, flag: flag });
+			$("#measurementChoiceModal").hide();
+		});
+
+		socket.on("measurement_update", function (data) {
+			$(`.result-box[data-type=${data.type}] .value`).text(`${data.value} mg/dL`);
+		});
+
+		socket.on("measurement_stopped", function (data) {
+			currentSessionData.results[data.type] = data.value;
+			console.log("Hasil diperbarui:", currentSessionData);
+
+			const resultBox = $(`.result-box[data-type=${data.type}]`);
+			const measureButton = $(`.btn-measure[data-type=${data.type}]`);
+			measureButton.text("Selesai").css("background-color", "#28a745");
+
+			// Hapus tombol lama jika ada
+			resultBox.find(".action-buttons").remove();
+
+			// Buat kontainer untuk tombol baru
+			const buttonContainer = $(
+				'<div class="action-buttons" style="margin-top: 15px; display: flex; gap: 10px; justify-content: center;"></div>'
+			);
+
+			// Buat tombol "Ulang"
+			const repeatButton = $('<button class="btn-ulang">Ulang</button>').on("click", function () {
+				// Hapus tombol-tombol
+				buttonContainer.remove();
+
+				// Reset tampilan box
+				resultBox.find(".value").text("- mg/dL");
+
+				// Reset dan aktifkan kembali tombol pilihan pengukuran
+				measureButton
+					.prop("disabled", false)
+					.css("background-color", "white")
+					.text(measureButton.text().replace("Selesai", "Kolesterol")); // Sesuaikan teks jika perlu
+
+				// Kirim lagi event untuk memulai pengukuran
+				socket.emit("start_measurement", { type: data.type, flag: measureButton.data("flag") });
+			});
+
+			// Buat tombol "OK"
+			const okButton = $('<button class="btn-ok">OK</button>').on("click", function () {
+				// Hapus tombol-tombol
+				buttonContainer.remove();
+
+				// Tampilkan kembali modal pilihan pengukuran
+				$("#measurementChoiceModal").css("display", "flex");
+			});
+
+			// Tambahkan tombol-tombol ke kontainer, lalu ke result-box
+			buttonContainer.append(repeatButton).append(okButton);
+			resultBox.append(buttonContainer);
+		});
+
+		// --- PERBAIKAN UTAMA DI SINI ---
+		socket.on("save_status", function (data) {
+			// Tampilkan notifikasi dari server
+			showNotification(data.message, data.status);
+			// Reset seluruh halaman SETELAH menerima konfirmasi
+			resetMeasurementPage();
+		});
+	});
+</script>
+{% endblock %}

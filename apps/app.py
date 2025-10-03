@@ -1,0 +1,672 @@
+import os
+import psycopg2
+import bcrypt
+import csv
+import io   
+import serial # Untuk komunikasi dengan ESP32
+import threading # Untuk membaca data serial di background
+from flask import Flask, render_template, request, redirect, url_for, flash, session, g, jsonify, Response
+from flask_socketio import SocketIO, emit
+from dotenv import load_dotenv
+
+# Muat environment variables dari file .env
+load_dotenv()
+
+app = Flask(__name__)
+@app.before_request
+def load_logged_in_user():
+    user_id = session.get('user_id')
+    if user_id is None:
+        g.user = None
+    else:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute('SELECT id, username, role FROM users WHERE id = %s', (user_id,))
+        g.user = cur.fetchone() # g.user sekarang berisi tuple (id, username, role)
+        cur.close()
+        conn.close()
+# Diperlukan untuk menggunakan flash messages (notifikasi)
+app.secret_key = os.getenv('SECRET_KEY', os.urandom(24).hex()) # Menggunakan SECRET_KEY dari .env
+socketio = SocketIO(app)
+# Ganti '/dev/ttyUSB0' dengan port serial Raspberry Pi Anda
+SERIAL_PORT_NAME = os.getenv('SERIAL_PORT')
+ser = None  # Inisialisasi sebagai None 
+
+if SERIAL_PORT_NAME:
+    try:
+        ser = serial.Serial(SERIAL_PORT_NAME, 9600, timeout=1)
+        print(f"Berhasil terhubung ke port serial: {SERIAL_PORT_NAME}")
+    except serial.SerialException as e:
+        print(f"GAGAL terhubung ke port serial {SERIAL_PORT_NAME}: {e}")
+        # Biarkan ser tetap None agar aplikasi tidak crash
+else:
+    print("Tidak ada SERIAL_PORT yang diatur. Menjalankan dalam mode simulasi.")
+
+# Fungsi untuk membuat koneksi ke database
+def get_db_connection():
+    conn = psycopg2.connect(
+        dbname=os.getenv('DB_NAME'),
+        user=os.getenv('DB_USER'),
+        password=os.getenv('DB_PASSWORD'),
+        host=os.getenv('DB_HOST'),
+        port=os.getenv('DB_PORT')
+    )
+    return conn
+
+# Fungsi untuk membuat user admin jika belum ada
+def create_default_admin():
+    conn = get_db_connection()
+    cur = conn.cursor()
+    # Cek apakah user 'admin' sudah ada
+    cur.execute("SELECT 1 FROM users WHERE username = 'admin'")
+    if cur.fetchone() is None:
+        print("Membuat user admin default...")
+        # Hash password default untuk admin
+        # PENTING: Password ini harus diganti di production!
+        default_password = b'admin123'
+        hashed_password = bcrypt.hashpw(default_password, bcrypt.gensalt())
+        
+        cur.execute(
+            """
+            INSERT INTO users (nama, username, email, no_hp, password_hash, role, is_active)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """,
+            ('Admin Utama', 'admin', 'admin@example.com', '081234567890', hashed_password.decode('utf-8'), 'admin', True)
+        )
+        conn.commit()
+        print("User admin berhasil dibuat.")
+    else:
+        print("User admin sudah ada.")
+    cur.close()
+    conn.close()
+
+# Route untuk halaman utama, langsung arahkan ke login
+@app.route('/')
+def index():
+    return redirect(url_for('login'))
+
+# Route untuk halaman login
+@app.route('/login', methods=('GET', 'POST'))
+def login():
+    if request.method == 'POST':
+        username = request.form['username']
+        password = request.form['password'].encode('utf-8')
+
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute('SELECT * FROM users WHERE username = %s', (username,))
+        user = cur.fetchone() # user[0] = id, user[5] = password_hash, user[6] = role
+        cur.close()
+        conn.close()
+
+        if user and bcrypt.checkpw(password, user[5].encode('utf-8')):
+            session['user_id'] = user[0] # Simpan ID user ke dalam session
+            session['user_role'] = user[6] # Simpan role user ke dalam session
+            flash(f'Selamat datang, {user[1]}!', 'success') # user[1] adalah username
+            return redirect(url_for('dashboard'))
+        else:
+            flash('Username atau Password salah. Silakan coba lagi.', 'danger')
+            return redirect(url_for('login'))
+
+    return render_template('login.html')
+
+@app.route('/logout')
+def logout():
+    session.clear() # Hapus semua data dari session
+    flash('Anda telah keluar.', 'info')
+    return redirect(url_for('login'))
+
+# TAMBAHKAN route baru ini di bawah fungsi login
+@app.route('/dashboard')
+def dashboard():
+    if g.user is None: # Jika belum login, redirect ke login
+        flash('Anda perlu login untuk mengakses dashboard.', 'warning')
+        return redirect(url_for('login'))
+
+    # Kirim data user ke template dashboard
+    return render_template('dashboard.html', user_data=g.user)
+
+# Route untuk halaman sign up (pendaftaran)
+@app.route('/signup', methods=('GET', 'POST'))
+def signup():
+    if request.method == 'POST':
+        # Ambil data dari form
+        nama = request.form['nama']
+        username = request.form['username']
+        email = request.form['email']
+        no_hp = request.form['no_hp']
+        password = request.form['password'].encode('utf-8') # encode ke bytes
+        confirm_password = request.form['confirm_password'].encode('utf-8')
+        role = request.form['role']
+
+        # Validasi sederhana
+        if password != confirm_password:
+            flash('Password dan konfirmasi password tidak cocok!', 'danger')
+            return redirect(url_for('signup'))
+
+        # Hash password sebelum disimpan
+        hashed_password = bcrypt.hashpw(password, bcrypt.gensalt())
+
+        conn = get_db_connection()
+        cur = conn.cursor()
+        try:
+            # Masukkan data ke database
+            cur.execute(
+                """
+                INSERT INTO users (nama, username, email, no_hp, password_hash, role)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                """,
+                (nama, username, email, no_hp, hashed_password.decode('utf-8'), role)
+            )
+            conn.commit()
+            flash('Pendaftaran berhasil! Silakan tunggu aktivasi dari admin atau via email.', 'success')
+            return redirect(url_for('login'))
+        except psycopg2.IntegrityError:
+            # Tangani jika username atau email sudah ada
+            conn.rollback() # Batalkan transaksi
+            flash('Username atau Email sudah terdaftar.', 'danger')
+        finally:
+            # Selalu tutup koneksi
+            cur.close()
+            conn.close()
+
+    return render_template('signup.html')
+
+# @app.route('/measure', methods=('GET', 'POST'))
+# def measure():
+#     if g.user is None:
+#         return redirect(url_for('login'))
+
+#     if request.method == 'POST':
+#         # Ini adalah logika untuk mendaftarkan pasien baru
+#         nama_lengkap = request.form['nama_pasien']
+#         jenis_kelamin = request.form.get('jenis_kelamin')
+#         alamat = request.form['alamat']
+#         umur = request.form['umur']
+#         nik = request.form['nik']
+#         no_hp = request.form['no_hp']
+
+#         conn = get_db_connection()
+#         cur = conn.cursor()
+#         try:
+#             cur.execute(
+#                 """
+#                 INSERT INTO patients (nama_lengkap, jenis_kelamin, alamat, umur, nik, no_hp)
+#                 VALUES (%s, %s, %s, %s, %s, %s) RETURNING id
+#                 """,
+#                 (nama_lengkap, jenis_kelamin, alamat, umur, nik, no_hp)
+#             )
+#             new_patient_id = cur.fetchone()[0]
+#             conn.commit()
+#             flash('Pasien baru berhasil didaftarkan!', 'success')
+#             # Di sini kita bisa redirect ke halaman pengukuran dengan data pasien baru
+#             # Untuk sekarang kita render template biasa dulu
+#         except psycopg2.IntegrityError:
+#             conn.rollback()
+#             flash('NIK sudah terdaftar. Gunakan fitur pasien lama.', 'danger')
+#         finally:
+#             cur.close()
+#             conn.close()
+
+#     return render_template('measure.html')
+
+@app.route('/measure', methods=('GET', 'POST'))
+def measure():
+    if g.user is None:
+        return redirect(url_for('login'))
+    
+    if request.method == 'POST':
+        # Logika ini sekarang untuk AJAX
+
+
+        conn = get_db_connection()
+        cur = conn.cursor()
+        try:
+    # Ambil semua data dari form
+            nama_lengkap = request.form['nama_pasien']
+            jenis_kelamin = request.form.get('jenis_kelamin')
+            alamat = request.form['alamat']
+            umur = request.form['umur']
+            nik = request.form['nik']
+            no_hp = request.form['no_hp']
+
+            # Perintah SQL dengan semua kolom dan placeholder yang benar
+            cur.execute(
+                """
+                INSERT INTO patients (nama_lengkap, jenis_kelamin, alamat, umur, nik, no_hp)
+                VALUES (%s, %s, %s, %s, %s, %s) 
+                RETURNING id, nama_lengkap, nik, alamat, umur, jenis_kelamin
+                """,
+                (nama_lengkap, jenis_kelamin, alamat, umur, nik, no_hp)
+            )
+            new_patient = cur.fetchone()
+            conn.commit()
+            return jsonify({
+                'status': 'success',
+                'message': 'Pasien baru berhasil didaftarkan!',
+                'patient': {
+                    'id': new_patient[0],
+                    'nama': new_patient[1],
+                    'nik': new_patient[2],
+                    'alamat': new_patient[3],
+                    'umur': new_patient[4],         # <-- TAMBAHAN
+                    'jenis_kelamin': new_patient[5] # <-- TAMBAHAN
+                }
+            })
+        except psycopg2.IntegrityError:
+            conn.rollback()
+            return jsonify({'status': 'error', 'message': 'NIK sudah terdaftar. Gunakan fitur pasien lama.'}), 400
+        finally:
+            cur.close()
+            conn.close()
+
+    return render_template('measure.html')
+
+
+# --- HANDLER UNTUK WEBSOCKETS ---
+
+@socketio.on('connect')
+def handle_connect():
+    print('Client connected')
+
+@socketio.on('start_measurement')
+def handle_start_measurement(data):
+    # data akan berisi {'type': 'cholesterol', 'flag': 1}
+    flag = data.get('flag')
+    print(f"Menerima permintaan pengukuran: {data.get('type')} dengan flag: {flag}")
+    
+    # Kirim flag ke ESP32 melalui serial
+    if ser:  # <-- TAMBAHKAN PENGECEKAN INI
+        try:
+            ser.write(f"{flag}\n".encode())
+            emit('status_update', {'message': f"Memulai pengukuran {data.get('type')}..."})
+        except Exception as e:
+            print(f"Error menulis ke serial port: {e}")
+            emit('error', {'message': "Gagal memulai pengukuran. Cek koneksi alat."})
+    else:
+        # Bagian simulasi ini akan berjalan jika ser tidak terhubung
+        emit('status_update', {'message': f"Mode Simulasi: Memulai pengukuran {data.get('type')}..."})
+    # Simulasi data masuk
+    import time, random
+    for i in range(5):
+        time.sleep(1)
+        value = round(random.uniform(100, 200), 1)
+        emit('measurement_update', {'type': data.get('type'), 'value': value})
+    
+    final_value = round(random.uniform(100, 200), 1)
+    emit('measurement_stopped', {'type': data.get('type'), 'value': final_value})
+
+@socketio.on('save_session_data')
+def handle_save_session(data):
+    patient_id = data.get('patient_id')
+    results = data.get('results')
+    user_id = session.get('user_id') # Ambil ID operator yang sedang login
+
+    if not all([patient_id, results, user_id]):
+        emit('save_status', {'status': 'error', 'message': 'Data tidak lengkap.'})
+        return
+
+    cholesterol = results.get('cholesterol', 0.0)
+    uric_acid = results.get('asam_urat', 0.0)
+    blood_sugar = results.get('gula_darah', 0.0)
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            INSERT INTO measurements (patient_id, user_id, cholesterol_value, uric_acid_value, blood_sugar_value)
+            VALUES (%s, %s, %s, %s, %s)
+            """,
+            (patient_id, user_id, cholesterol, uric_acid, blood_sugar)
+        )
+        conn.commit()
+        print(f"Data pengukuran untuk pasien ID {patient_id} berhasil disimpan.")
+        emit('save_status', {'status': 'success', 'message': 'Data berhasil disimpan!'})
+    except Exception as e:
+        conn.rollback()
+        print(f"Gagal menyimpan data pengukuran: {e}")
+        emit('save_status', {'status': 'error', 'message': 'Terjadi kesalahan saat menyimpan data.'})
+    finally:
+        cur.close()
+        conn.close()
+
+# (Fungsi untuk membaca data serial secara terus-menerus di background)
+def read_serial_data():
+    while True:
+        if ser.in_waiting > 0:
+            line = ser.readline().decode('utf-8').rstrip()
+            # Di sini Anda perlu mem-parsing data dari ESP32
+            # Contoh: "kolesterol:150.5"
+            parts = line.split(':')
+            if len(parts) == 2:
+                tipe, nilai = parts
+                socketio.emit('measurement_update', {'type': tipe, 'value': float(nilai)})
+
+
+# Route API untuk mencari pasien (fitur autocomplete)
+@app.route('/api/search_patients')
+def search_patients():
+    if g.user is None:
+        return jsonify([]) # Return empty jika belum login
+
+    query = request.args.get('q', '')
+    conn = get_db_connection()
+    cur = conn.cursor()
+    # Cari pasien yang namanya mengandung query, limit 5 hasil
+    cur.execute(
+        "SELECT id, nama_lengkap, nik, alamat, umur, jenis_kelamin FROM patients WHERE nama_lengkap ILIKE %s LIMIT 5",
+        (f'%{query}%',)
+    )
+    patients = [{
+        'id': row[0], 'nama': row[1], 'nik': row[2], 'alamat': row[3],
+        'umur': row[4], 'jenis_kelamin': row[5] # <-- TAMBAHAN
+    } for row in cur.fetchall()]
+    cur.close()
+    conn.close()
+    return jsonify(patients)
+
+@app.route('/data_pengukuran')
+def data_pengukuran():
+    if g.user is None:
+        return redirect(url_for('login'))
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+    # Query ini menggabungkan tabel pasien dan pengukuran untuk mendapatkan
+    # nama pasien dan tanggal pengukuran TERBARU untuk setiap pasien.
+    cur.execute("""
+        SELECT p.id, p.nama_lengkap, MAX(m.measured_at) as last_measured
+        FROM patients p
+        JOIN measurements m ON p.id = m.patient_id
+        GROUP BY p.id, p.nama_lengkap
+        ORDER BY last_measured DESC;
+    """)
+    patients_with_dates = cur.fetchall()
+    cur.close()
+    conn.close()
+
+    return render_template('data_pengukuran.html', patients=patients_with_dates)
+
+@app.route('/api/patient_measurements/<int:patient_id>')
+def get_patient_measurements(patient_id):
+    if g.user is None:
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    # Query 1: Ambil data biodata pasien
+    cur.execute(
+        "SELECT nama_lengkap, umur, jenis_kelamin, alamat, nik, no_hp FROM patients WHERE id = %s",
+        (patient_id,)
+    )
+    patient_data = cur.fetchone()
+    biodata = {
+        'nama': patient_data[0],
+        'umur': patient_data[1],
+        'jenis_kelamin': patient_data[2],
+        'alamat': patient_data[3],
+        'nik': patient_data[4],
+        'no_hp': patient_data[5]
+    } if patient_data else {}
+
+    # Query 2: Ambil semua riwayat pengukuran untuk chart
+    cur.execute(
+        """
+        SELECT measured_at, cholesterol_value, uric_acid_value, blood_sugar_value
+        FROM measurements
+        WHERE patient_id = %s
+        ORDER BY measured_at ASC;
+        """, 
+        (patient_id,)
+    )
+    measurements = cur.fetchall()
+    cur.close()
+    conn.close()
+
+    chart_data = {
+        'labels': [m[0].strftime('%d %b %Y %H:%M') for m in measurements],
+        'cholesterol': [m[1] for m in measurements],
+        'uric_acid': [m[2] for m in measurements],
+        'blood_sugar': [m[3] for m in measurements],
+    }
+
+    # Gabungkan kedua data dalam satu response JSON
+    return jsonify({'biodata': biodata, 'chart_data': chart_data})
+
+@app.route('/api/patient/<int:patient_id>')
+def get_patient_detail(patient_id):
+    """API untuk mengambil data detail satu pasien."""
+    if g.user is None:
+        return jsonify({'error': 'Unauthorized'}), 401
+    
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT id, nama_lengkap, jenis_kelamin, alamat, umur, nik, no_hp FROM patients WHERE id = %s", (patient_id,))
+    patient_data = cur.fetchone()
+    cur.close()
+    conn.close()
+
+    if patient_data is None:
+        return jsonify({'error': 'Patient not found'}), 404
+
+    patient_dict = {
+        'id': patient_data[0],
+        'nama_lengkap': patient_data[1],
+        'jenis_kelamin': patient_data[2],
+        'alamat': patient_data[3],
+        'umur': patient_data[4],
+        'nik': patient_data[5],
+        'no_hp': patient_data[6]
+    }
+    return jsonify(patient_dict)
+
+@app.route('/patient/edit/<int:patient_id>', methods=['POST'])
+def edit_patient(patient_id):
+    """Menerima data dari form edit dan mengupdate database."""
+    if g.user is None:
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    data = request.form
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            UPDATE patients
+            SET nama_lengkap = %s, jenis_kelamin = %s, alamat = %s, umur = %s, nik = %s, no_hp = %s
+            WHERE id = %s
+            """,
+            (data['nama_lengkap'], data['jenis_kelamin'], data['alamat'], data['umur'], data['nik'], data['no_hp'], patient_id)
+        )
+        conn.commit()
+        return jsonify({'status': 'success', 'message': 'Data pasien berhasil diperbarui!'})
+    except Exception as e:
+        conn.rollback()
+        return jsonify({'status': 'error', 'message': f'Gagal memperbarui data: {e}'}), 500
+    finally:
+        cur.close()
+        conn.close()
+        
+@app.route('/patient/delete/<int:patient_id>', methods=['POST'])
+def delete_patient(patient_id):
+    """Menghapus data pasien dan semua data pengukurannya."""
+    if g.user is None:
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        # Karena kita sudah mengatur ON DELETE CASCADE di database,
+        # menghapus pasien akan otomatis menghapus semua data pengukurannya.
+        cur.execute("DELETE FROM patients WHERE id = %s", (patient_id,))
+        conn.commit()
+        return jsonify({'status': 'success', 'message': 'Data pasien berhasil dihapus!'})
+    except Exception as e:
+        conn.rollback()
+        return jsonify({'status': 'error', 'message': f'Gagal menghapus data: {e}'}), 500
+    finally:
+        cur.close()
+        conn.close()
+        
+@app.route('/export/all')
+def export_all():
+    """Membuat file CSV dari semua data pengukuran dan mengirimkannya sebagai unduhan."""
+    if g.user is None:
+        return redirect(url_for('login'))
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    # Query untuk mengambil semua data yang relevan dengan menggabungkan tabel
+    cur.execute("""
+        SELECT
+            p.nama_lengkap,
+            p.nik,
+            p.umur,
+            p.jenis_kelamin,
+            m.measured_at,
+            m.cholesterol_value,
+            m.uric_acid_value,
+            m.blood_sugar_value
+        FROM measurements m
+        JOIN patients p ON m.patient_id = p.id
+        ORDER BY p.nama_lengkap, m.measured_at;
+    """)
+    all_data = cur.fetchall()
+    cur.close()
+    conn.close()
+
+    # Proses pembuatan file CSV di memori
+    output = io.StringIO()
+    writer = csv.writer(output)
+
+    # Tulis baris header
+    writer.writerow(['Nama Pasien', 'NIK', 'Umur', 'Jenis Kelamin', 'Tanggal Pengukuran', 'Kolesterol (mg/dL)', 'Asam Urat (mg/dL)', 'Gula Darah (mg/dL)'])
+
+    # Tulis semua baris data
+    for row in all_data:
+        writer.writerow(row)
+
+    output.seek(0) # Kembali ke awal file 'virtual'
+
+    # Kirim file ke browser sebagai unduhan
+    return Response(
+        output,
+        mimetype="text/csv",
+        headers={"Content-Disposition": "attachment;filename=semua_data_pengukuran.csv"}
+    )
+    
+@app.route('/export/selected')
+def export_selected():
+    """Membuat file CSV dari riwayat pengukuran pasien yang dipilih."""
+    if g.user is None:
+        return redirect(url_for('login'))
+
+    # Ambil daftar ID dari parameter URL, contoh: /export/selected?ids=1,2,5
+    patient_ids = request.args.get('ids')
+    if not patient_ids:
+        flash('Tidak ada pasien yang dipilih untuk diekspor.', 'warning')
+        return redirect(url_for('data_pengukuran'))
+
+    # Ubah string "1,2,5" menjadi tuple integer (1, 2, 5) untuk query SQL
+    ids_tuple = tuple(int(pid) for pid in patient_ids.split(','))
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+    
+    # Query sama seperti export_all, tapi dengan klausa WHERE IN (...)
+    cur.execute(f"""
+        SELECT
+            p.nama_lengkap, p.nik, p.umur, p.jenis_kelamin,
+            m.measured_at, m.cholesterol_value, m.uric_acid_value, m.blood_sugar_value
+        FROM measurements m
+        JOIN patients p ON m.patient_id = p.id
+        WHERE p.id IN %s
+        ORDER BY p.nama_lengkap, m.measured_at;
+    """, (ids_tuple,)) # Masukkan tuple ke dalam query
+    
+    selected_data = cur.fetchall()
+    cur.close()
+    conn.close()
+
+    if not selected_data:
+        flash('Tidak ada data pengukuran untuk pasien yang dipilih.', 'warning')
+        return redirect(url_for('data_pengukuran'))
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(['Nama Pasien', 'NIK', 'Umur', 'Jenis Kelamin', 'Tanggal Pengukuran', 'Kolesterol (mg/dL)', 'Asam Urat (mg/dL)', 'Gula Darah (mg/dL)'])
+    writer.writerows(selected_data)
+    
+    output.seek(0)
+    
+    return Response(
+        output,
+        mimetype="text/csv",
+        headers={"Content-Disposition": "attachment;filename=data_pengukuran_terpilih.csv"}
+    )
+    
+@app.route('/export/patient/<int:patient_id>')
+def export_patient(patient_id):
+    """Membuat file CSV dari riwayat pengukuran satu pasien."""
+    if g.user is None:
+        return redirect(url_for('login'))
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+    
+    # Query untuk mengambil semua riwayat pengukuran dari SATU pasien
+    cur.execute("""
+        SELECT
+            p.nama_lengkap, p.nik, p.umur, p.jenis_kelamin,
+            m.measured_at, m.cholesterol_value, m.uric_acid_value, m.blood_sugar_value
+        FROM measurements m
+        JOIN patients p ON m.patient_id = p.id
+        WHERE p.id = %s
+        ORDER BY m.measured_at;
+    """, (patient_id,))
+    patient_data = cur.fetchall()
+    cur.close()
+    conn.close()
+
+    if not patient_data:
+        flash(f'Tidak ada data pengukuran untuk pasien dengan ID {patient_id}.', 'warning')
+        return redirect(url_for('data_pengukuran'))
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+
+    writer.writerow(['Nama Pasien', 'NIK', 'Umur', 'Jenis Kelamin', 'Tanggal Pengukuran', 'Kolesterol (mg/dL)', 'Asam Urat (mg/dL)', 'Gula Darah (mg/dL)'])
+    writer.writerows(patient_data)
+    
+    output.seek(0)
+    
+    # Membuat nama file dinamis berdasarkan nama pasien
+    patient_name = patient_data[0][0].replace(' ', '_').lower()
+    filename = f"data_pengukuran_{patient_name}.csv"
+
+    return Response(
+        output,
+        mimetype="text/csv",
+        headers={"Content-Disposition": f"attachment;filename={filename}"}
+    )
+# Main execution
+if __name__ == '__main__':
+    # Pastikan database berjalan sebelum membuat user admin
+    try:
+        get_db_connection().close() # Cek koneksi
+        create_default_admin()
+    except psycopg2.OperationalError as e:
+        print("Koneksi ke database gagal. Pastikan database berjalan.")
+        print(e)
+    
+    if ser:
+        print("Memulai thread untuk membaca data serial...")
+        serial_thread = threading.Thread(target=read_serial_data)
+        serial_thread.daemon = True
+        serial_thread.start()
+ 
+    socketio.run(app, debug=True, host='0.0.0.0', port=5000, allow_unsafe_werkzeug=True)
+    # app.run(debug=True, host='0.0.0.0', port=5000)

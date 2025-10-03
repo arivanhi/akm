@@ -1,0 +1,11 @@
+{% extends 'base.html' %} {% block title %}Dashboard - Sistem Monitoring Kesehatan{% endblock %} {% block content %}
+<h1 class="page-title">Selamat Datang di Dashboard</h1>
+<p>Ini adalah halaman beranda Anda. Di sini Anda bisa melihat ringkasan data kesehatan Anda atau mengelola sistem.</p>
+
+{% if g.user and g.user[2] == 'admin' %}
+<p>Sebagai **Admin**, Anda memiliki akses penuh ke pengaturan pengguna.</p>
+{% elif g.user and g.user[2] == 'operator' %}
+<p>Sebagai **Operator**, Anda dapat melakukan pengukuran dan mengelola data pasien.</p>
+{% else %}
+<p>Sebagai **Pasien**, Anda dapat melihat riwayat pengukuran Anda.</p>
+{% endif %} {% endblock %}
