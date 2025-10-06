@@ -4,3 +4,7 @@ python-dotenv
 bcrypt
 flask-socketio  
 pyserial        
+xgboost
+pandas
+numpy
+scikit-learn
