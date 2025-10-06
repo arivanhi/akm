@@ -1,19 +1,17 @@
 import os
-import io
-import csv
 import psycopg2
 import bcrypt
-import asyncio
-import threading
+import csv
+import io   
+import serial # Untuk komunikasi dengan ESP32
+import threading # Untuk membaca data serial di background
 from flask import Flask, render_template, request, redirect, url_for, flash, session, g, jsonify, Response
 from flask_socketio import SocketIO, emit
 from dotenv import load_dotenv
-from bleak import BleakScanner, BleakClient
 
 # Muat environment variables dari file .env
 load_dotenv()
 
-# --- Konfigurasi Aplikasi Flask ---
 app = Flask(__name__)
 @app.before_request
 def load_logged_in_user():
@@ -27,20 +25,22 @@ def load_logged_in_user():
         g.user = cur.fetchone() # g.user sekarang berisi tuple (id, username, role)
         cur.close()
         conn.close()
-app.secret_key = os.getenv('SECRET_KEY', os.urandom(24).hex())
-socketio = SocketIO(app, async_mode='threading')
+# Diperlukan untuk menggunakan flash messages (notifikasi)
+app.secret_key = os.getenv('SECRET_KEY', os.urandom(24).hex()) # Menggunakan SECRET_KEY dari .env
+socketio = SocketIO(app)
+# Ganti '/dev/ttyUSB0' dengan port serial Raspberry Pi Anda
+SERIAL_PORT_NAME = os.getenv('SERIAL_PORT')
+ser = None  # Inisialisasi sebagai None 
 
-# --- KONFIGURASI BLE ---
-# UUIDs ini HARUS SAMA PERSIS dengan yang ada di kode ESP32 Anda ==
-DEVICE_NAME = "AKM_ESP32"
-SERVICE_UUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
-DATA_CHARACTERISTIC_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8"    # Untuk Menerima Data (Notify)
-COMMAND_CHARACTERISTIC_UUID = "c82f254d-793d-42a9-a864-e88307223b33" # Untuk Mengirim Flag (Write)
-
-# Variabel global untuk menampung koneksi BLE
-ble_client = None
-
-# --- Fungsi-fungsi Bantuan & Middleware (Tidak Berubah) ---
+if SERIAL_PORT_NAME:
+    try:
+        ser = serial.Serial(SERIAL_PORT_NAME, 9600, timeout=1)
+        print(f"Berhasil terhubung ke port serial: {SERIAL_PORT_NAME}")
+    except serial.SerialException as e:
+        print(f"GAGAL terhubung ke port serial {SERIAL_PORT_NAME}: {e}")
+        # Biarkan ser tetap None agar aplikasi tidak crash
+else:
+    print("Tidak ada SERIAL_PORT yang diatur. Menjalankan dalam mode simulasi.")
 
 # Fungsi untuk membuat koneksi ke database
 def get_db_connection():
@@ -48,7 +48,7 @@ def get_db_connection():
         dbname=os.getenv('DB_NAME'),
         user=os.getenv('DB_USER'),
         password=os.getenv('DB_PASSWORD'),
-        host=os.getenv('DB_HOST'),  
+        host=os.getenv('DB_HOST'),
         port=os.getenv('DB_PORT')
     )
     return conn
@@ -80,58 +80,7 @@ def create_default_admin():
     cur.close()
     conn.close()
 
-
-def notification_handler(sender, data):
-    """Fungsi yang dipanggil setiap kali ada data baru dari ESP32."""
-    try:
-        message = data.decode('utf-8')
-        print(f"Data BLE diterima: '{message}'")
-        
-        parts = message.split(':')
-        if len(parts) == 2:
-            tipe, nilai = parts[0].strip(), parts[1].strip()
-            # Kirim data ke frontend melalui WebSocket
-            socketio.emit('measurement_update', {'type': tipe, 'value': float(nilai)})
-    except (UnicodeDecodeError, ValueError) as e:
-        print(f"Error memproses data BLE: {e}")
-
-async def ble_main_task():
-    """Tugas utama yang berjalan di background untuk mencari, menghubungkan, dan mendengarkan ESP32."""
-    global ble_client
-    while True:
-        print("Mencari perangkat BLE...")
-        device = await BleakScanner.find_device_by_name(DEVICE_NAME)
-        
-        if not device:
-            print(f"Perangkat '{DEVICE_NAME}' tidak ditemukan. Mencoba lagi dalam 5 detik...")
-            await asyncio.sleep(5)
-            continue
-
-        print(f"Perangkat ditemukan! Mencoba terhubung ke {device.address}...")
-        
-        async with BleakClient(device.address) as client:
-            ble_client = client # Simpan koneksi ke variabel global
-            print(f"Terhubung ke {device.address}")
-            try:
-                # Berlangganan notifikasi dari Karakteristik Data
-                await client.start_notify(DATA_CHARACTERISTIC_UUID, notification_handler)
-                
-                # Jaga koneksi tetap hidup
-                while client.is_connected:
-                    await asyncio.sleep(1)
-            
-            except Exception as e:
-                print(f"Error selama koneksi: {e}")
-            
-            finally:
-                ble_client = None # Hapus koneksi saat terputus
-                print("Koneksi terputus.")
-        
-        await asyncio.sleep(2) # Jeda sebelum mencoba scan lagi
-
-# --- Routes & API Endpoints (Tidak Berubah) ---
-# (Semua @app.route Anda dari kode sebelumnya diletakkan di sini)
-# Contoh:
+# Route untuk halaman utama, langsung arahkan ke login
 @app.route('/')
 def index():
     return redirect(url_for('login'))
@@ -223,6 +172,44 @@ def signup():
 
     return render_template('signup.html')
 
+# @app.route('/measure', methods=('GET', 'POST'))
+# def measure():
+#     if g.user is None:
+#         return redirect(url_for('login'))
+
+#     if request.method == 'POST':
+#         # Ini adalah logika untuk mendaftarkan pasien baru
+#         nama_lengkap = request.form['nama_pasien']
+#         jenis_kelamin = request.form.get('jenis_kelamin')
+#         alamat = request.form['alamat']
+#         umur = request.form['umur']
+#         nik = request.form['nik']
+#         no_hp = request.form['no_hp']
+
+#         conn = get_db_connection()
+#         cur = conn.cursor()
+#         try:
+#             cur.execute(
+#                 """
+#                 INSERT INTO patients (nama_lengkap, jenis_kelamin, alamat, umur, nik, no_hp)
+#                 VALUES (%s, %s, %s, %s, %s, %s) RETURNING id
+#                 """,
+#                 (nama_lengkap, jenis_kelamin, alamat, umur, nik, no_hp)
+#             )
+#             new_patient_id = cur.fetchone()[0]
+#             conn.commit()
+#             flash('Pasien baru berhasil didaftarkan!', 'success')
+#             # Di sini kita bisa redirect ke halaman pengukuran dengan data pasien baru
+#             # Untuk sekarang kita render template biasa dulu
+#         except psycopg2.IntegrityError:
+#             conn.rollback()
+#             flash('NIK sudah terdaftar. Gunakan fitur pasien lama.', 'danger')
+#         finally:
+#             cur.close()
+#             conn.close()
+
+#     return render_template('measure.html')
+
 @app.route('/measure', methods=('GET', 'POST'))
 def measure():
     if g.user is None:
@@ -284,22 +271,30 @@ def handle_connect():
 
 @socketio.on('start_measurement')
 def handle_start_measurement(data):
-    """Menerima flag dari web dan mengirimkannya ke ESP32 via BLE."""
+    # data akan berisi {'type': 'cholesterol', 'flag': 1}
     flag = data.get('flag')
-    print(f"Menerima permintaan pengukuran dari web: flag {flag}")
-
-    async def write_ble_command():
-        if ble_client and ble_client.is_connected:
-            try:
-                await ble_client.write_gatt_char(COMMAND_CHARACTERISTIC_UUID, str(flag).encode())
-                print(f"Flag '{flag}' berhasil dikirim ke ESP32.")
-            except Exception as e:
-                print(f"Gagal mengirim flag ke ESP32: {e}")
-        else:
-            print("Gagal mengirim flag: tidak terhubung ke perangkat BLE.")
-
-    # Jalankan perintah tulis BLE di event loop yang sedang berjalan
-    asyncio.run_coroutine_threadsafe(write_ble_command(), ble_loop)
+    print(f"Menerima permintaan pengukuran: {data.get('type')} dengan flag: {flag}")
+    
+    # Kirim flag ke ESP32 melalui serial
+    if ser:  # <-- TAMBAHKAN PENGECEKAN INI
+        try:
+            ser.write(f"{flag}\n".encode())
+            emit('status_update', {'message': f"Memulai pengukuran {data.get('type')}..."})
+        except Exception as e:
+            print(f"Error menulis ke serial port: {e}")
+            emit('error', {'message': "Gagal memulai pengukuran. Cek koneksi alat."})
+    else:
+        # Bagian simulasi ini akan berjalan jika ser tidak terhubung
+        emit('status_update', {'message': f"Mode Simulasi: Memulai pengukuran {data.get('type')}..."})
+    # Simulasi data masuk
+    import time, random
+    for i in range(5):
+        time.sleep(1)
+        value = round(random.uniform(100, 200), 1)
+        emit('measurement_update', {'type': data.get('type'), 'value': value})
+    
+    final_value = round(random.uniform(100, 200), 1)
+    emit('measurement_stopped', {'type': data.get('type'), 'value': final_value})
 
 @socketio.on('save_session_data')
 def handle_save_session(data):
@@ -336,6 +331,20 @@ def handle_save_session(data):
         cur.close()
         conn.close()
 
+# (Fungsi untuk membaca data serial secara terus-menerus di background)
+def read_serial_data():
+    while True:
+        if ser.in_waiting > 0:
+            line = ser.readline().decode('utf-8').rstrip()
+            # Di sini Anda perlu mem-parsing data dari ESP32
+            # Contoh: "kolesterol:150.5"
+            parts = line.split(':')
+            if len(parts) == 2:
+                tipe, nilai = parts
+                socketio.emit('measurement_update', {'type': tipe, 'value': float(nilai)})
+
+
+# Route API untuk mencari pasien (fitur autocomplete)
 @app.route('/api/search_patients')
 def search_patients():
     if g.user is None:
@@ -643,28 +652,21 @@ def export_patient(patient_id):
         mimetype="text/csv",
         headers={"Content-Disposition": f"attachment;filename={filename}"}
     )
-# --- Main Execution (DIPERBARUI) ---
-
-# Buat loop asyncio untuk tugas BLE
-ble_loop = asyncio.new_event_loop()
-
-def run_ble_task():
-    """Fungsi untuk menjalankan loop asyncio di thread terpisah."""
-    asyncio.set_event_loop(ble_loop)
-    ble_loop.run_until_complete(ble_main_task())
-
+# Main execution
 if __name__ == '__main__':
-    # Pastikan database berjalan
+    # Pastikan database berjalan sebelum membuat user admin
     try:
-        get_db_connection().close()
-        # create_default_admin() 
+        get_db_connection().close() # Cek koneksi
+        create_default_admin()
     except psycopg2.OperationalError as e:
-        print(f"Koneksi ke database gagal: {e}")
-
-    # Jalankan tugas BLE di thread background
-    ble_thread = threading.Thread(target=run_ble_task, daemon=True)
-    ble_thread.start()
+        print("Koneksi ke database gagal. Pastikan database berjalan.")
+        print(e)
     
-    # Jalankan server web Flask-SocketIO
-    print("Menjalankan server web Flask...")
-    socketio.run(app, debug=False, host='0.0.0.0', port=5000, allow_unsafe_werkzeug=True)
+    if ser:
+        print("Memulai thread untuk membaca data serial...")
+        serial_thread = threading.Thread(target=read_serial_data)
+        serial_thread.daemon = True
+        serial_thread.start()
+ 
+    socketio.run(app, debug=True, host='0.0.0.0', port=5000, allow_unsafe_werkzeug=True)
+    # app.run(debug=True, host='0.0.0.0', port=5000)
