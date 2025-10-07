@@ -4,14 +4,17 @@ import csv
 import psycopg2
 import bcrypt
 import asyncio
-import threading
 from flask import Flask, render_template, request, redirect, url_for, flash, session, g, jsonify, Response
 from flask_socketio import SocketIO, emit
 from dotenv import load_dotenv
-from bleak import BleakScanner, BleakClient
+import paho.mqtt.client as mqtt
 
 # Muat environment variables dari file .env
 load_dotenv()
+
+MQTT_BROKER_HOST = os.getenv('MQTT_BROKER_HOST', 'localhost')
+MQTT_DATA_TOPIC = "akm/data"
+MQTT_COMMAND_TOPIC = "akm/command"
 
 # --- Konfigurasi Aplikasi Flask ---
 app = Flask(__name__)
@@ -30,18 +33,30 @@ def load_logged_in_user():
 app.secret_key = os.getenv('SECRET_KEY', os.urandom(24).hex())
 socketio = SocketIO(app, async_mode='threading')
 
-# --- KONFIGURASI BLE ---
-# UUIDs ini HARUS SAMA PERSIS dengan yang ada di kode ESP32 Anda ==
-DEVICE_NAME = "AKM_ESP32"
-SERVICE_UUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
-DATA_CHARACTERISTIC_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8"    # Untuk Menerima Data (Notify)
-COMMAND_CHARACTERISTIC_UUID = "c82f254d-793d-42a9-a864-e88307223b33" # Untuk Mengirim Flag (Write)
-
-# Variabel global untuk menampung koneksi BLE
-ble_client = None
-
 # --- Fungsi-fungsi Bantuan & Middleware (Tidak Berubah) ---
+# --- Logika MQTT Client ---
+def on_connect(client, userdata, flags, rc):
+    print(f"Terhubung ke MQTT Broker dengan hasil: {rc}")
+    client.subscribe(MQTT_DATA_TOPIC)
+    print(f"Subscribe ke topik: {MQTT_DATA_TOPIC}")
 
+def on_message(client, userdata, msg):
+    """Dipanggil setiap ada data dari Node-RED."""
+    payload = msg.payload.decode('utf-8')
+    print(f"Data diterima dari MQTT topik '{msg.topic}': {payload}")
+    
+    # Parsing data dan kirim ke browser via WebSocket
+    parts = payload.split(':')
+    if len(parts) == 2:
+        tipe, nilai = parts[0].strip(), parts[1].strip()
+        socketio.emit('measurement_update', {'type': tipe, 'value': float(nilai)})
+
+# Inisialisasi MQTT Client
+mqtt_client = mqtt.Client()
+mqtt_client.on_connect = on_connect
+mqtt_client.on_message = on_message
+mqtt_client.connect(MQTT_BROKER_HOST, 1883, 60)
+mqtt_client.loop_start() # Menjalankan client di background thread
 # Fungsi untuk membuat koneksi ke database
 def get_db_connection():
     conn = psycopg2.connect(
@@ -79,55 +94,6 @@ def create_default_admin():
         print("User admin sudah ada.")
     cur.close()
     conn.close()
-
-
-def notification_handler(sender, data):
-    """Fungsi yang dipanggil setiap kali ada data baru dari ESP32."""
-    try:
-        message = data.decode('utf-8')
-        print(f"Data BLE diterima: '{message}'")
-        
-        parts = message.split(':')
-        if len(parts) == 2:
-            tipe, nilai = parts[0].strip(), parts[1].strip()
-            # Kirim data ke frontend melalui WebSocket
-            socketio.emit('measurement_update', {'type': tipe, 'value': float(nilai)})
-    except (UnicodeDecodeError, ValueError) as e:
-        print(f"Error memproses data BLE: {e}")
-
-async def ble_main_task():
-    """Tugas utama yang berjalan di background untuk mencari, menghubungkan, dan mendengarkan ESP32."""
-    global ble_client
-    while True:
-        print("Mencari perangkat BLE...")
-        device = await BleakScanner.find_device_by_name(DEVICE_NAME)
-        
-        if not device:
-            print(f"Perangkat '{DEVICE_NAME}' tidak ditemukan. Mencoba lagi dalam 5 detik...")
-            await asyncio.sleep(5)
-            continue
-
-        print(f"Perangkat ditemukan! Mencoba terhubung ke {device.address}...")
-        
-        async with BleakClient(device.address) as client:
-            ble_client = client # Simpan koneksi ke variabel global
-            print(f"Terhubung ke {device.address}")
-            try:
-                # Berlangganan notifikasi dari Karakteristik Data
-                await client.start_notify(DATA_CHARACTERISTIC_UUID, notification_handler)
-                
-                # Jaga koneksi tetap hidup
-                while client.is_connected:
-                    await asyncio.sleep(1)
-            
-            except Exception as e:
-                print(f"Error selama koneksi: {e}")
-            
-            finally:
-                ble_client = None # Hapus koneksi saat terputus
-                print("Koneksi terputus.")
-        
-        await asyncio.sleep(2) # Jeda sebelum mencoba scan lagi
 
 # --- Routes & API Endpoints (Tidak Berubah) ---
 # (Semua @app.route Anda dari kode sebelumnya diletakkan di sini)
@@ -284,22 +250,11 @@ def handle_connect():
 
 @socketio.on('start_measurement')
 def handle_start_measurement(data):
-    """Menerima flag dari web dan mengirimkannya ke ESP32 via BLE."""
+    """Menerima flag dari web dan mengirimkannya ke Node-RED via MQTT."""
     flag = data.get('flag')
-    print(f"Menerima permintaan pengukuran dari web: flag {flag}")
-
-    async def write_ble_command():
-        if ble_client and ble_client.is_connected:
-            try:
-                await ble_client.write_gatt_char(COMMAND_CHARACTERISTIC_UUID, str(flag).encode())
-                print(f"Flag '{flag}' berhasil dikirim ke ESP32.")
-            except Exception as e:
-                print(f"Gagal mengirim flag ke ESP32: {e}")
-        else:
-            print("Gagal mengirim flag: tidak terhubung ke perangkat BLE.")
-
-    # Jalankan perintah tulis BLE di event loop yang sedang berjalan
-    asyncio.run_coroutine_threadsafe(write_ble_command(), ble_loop)
+    print(f"Mengirim flag '{flag}' ke topik {MQTT_COMMAND_TOPIC}")
+    mqtt_client.publish(MQTT_COMMAND_TOPIC, str(flag))
+    
 
 @socketio.on('save_session_data')
 def handle_save_session(data):
@@ -643,15 +598,6 @@ def export_patient(patient_id):
         mimetype="text/csv",
         headers={"Content-Disposition": f"attachment;filename={filename}"}
     )
-# --- Main Execution (DIPERBARUI) ---
-
-# Buat loop asyncio untuk tugas BLE
-ble_loop = asyncio.new_event_loop()
-
-def run_ble_task():
-    """Fungsi untuk menjalankan loop asyncio di thread terpisah."""
-    asyncio.set_event_loop(ble_loop)
-    ble_loop.run_until_complete(ble_main_task())
 
 if __name__ == '__main__':
     # Pastikan database berjalan
@@ -661,10 +607,6 @@ if __name__ == '__main__':
     except psycopg2.OperationalError as e:
         print(f"Koneksi ke database gagal: {e}")
 
-    # Jalankan tugas BLE di thread background
-    ble_thread = threading.Thread(target=run_ble_task, daemon=True)
-    ble_thread.start()
-    
     # Jalankan server web Flask-SocketIO
     print("Menjalankan server web Flask...")
     socketio.run(app, debug=False, host='0.0.0.0', port=5000, allow_unsafe_werkzeug=True)

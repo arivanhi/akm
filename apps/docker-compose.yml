@@ -13,7 +13,8 @@ services:
     env_file:
       - .env # Muat environment variables dari file .env
     depends_on:
-      - db # Pastikan service 'db' dijalankan sebelum 'web'
+      db: # Pastikan service 'db' dijalankan sebelum 'web'
+        condition: service_healthy
 
   # Service untuk database PostgreSQL
   db:
@@ -29,6 +30,40 @@ services:
     volumes:
       - ./postgres-data:/var/lib/postgresql/data
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Service untuk MQTT Broker EMQX
+  emqx:
+    image: emqx/emqx:latest
+    container_name: emqx_broker
+    restart: always
+    ports:
+      - "1883:1883" # Port MQTT
+      - "8083:8083" # Port WebSocket
+      - "8084:8084" # Port Secure WebSocket
+      - "18083:18083" # Port Dashboard
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/emqx/bin/emqx", "ctl", "status"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  node-red:
+    image: nodered/node-red:latest
+    container_name: node_red
+    restart: always
+    ports:
+      - "1880:1880" # Port Node-RED
+    volumes:
+      - ./node-red-data:/data # Simpan data Node-RED secara persisten
+    devices:
+      - "/dev/ttyUSB0:/dev/ttyUSB0" # Sesuaikan dengan perangkat LoRa Anda
+    privileged: true # Berikan akses penuh ke perangkat
 
 volumes:
   postgres-data:
+  node-red-data:

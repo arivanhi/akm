@@ -4,7 +4,7 @@ import bcrypt
 import csv
 import io   
 import serial # Untuk komunikasi dengan ESP32
-import threading # Untuk membaca data serial di background
+# import threading # Untuk membaca data serial di background
 from flask import Flask, render_template, request, redirect, url_for, flash, session, g, jsonify, Response
 from flask_socketio import SocketIO, emit
 from dotenv import load_dotenv
@@ -41,6 +41,7 @@ if SERIAL_PORT_NAME:
         # Biarkan ser tetap None agar aplikasi tidak crash
 else:
     print("Tidak ada SERIAL_PORT yang diatur. Menjalankan dalam mode simulasi.")
+
 
 # Fungsi untuk membuat koneksi ke database
 def get_db_connection():
@@ -283,18 +284,7 @@ def handle_start_measurement(data):
         except Exception as e:
             print(f"Error menulis ke serial port: {e}")
             emit('error', {'message': "Gagal memulai pengukuran. Cek koneksi alat."})
-    else:
-        # Bagian simulasi ini akan berjalan jika ser tidak terhubung
-        emit('status_update', {'message': f"Mode Simulasi: Memulai pengukuran {data.get('type')}..."})
-    # Simulasi data masuk
-    import time, random
-    for i in range(5):
-        time.sleep(1)
-        value = round(random.uniform(100, 200), 1)
-        emit('measurement_update', {'type': data.get('type'), 'value': value})
-    
-    final_value = round(random.uniform(100, 200), 1)
-    emit('measurement_stopped', {'type': data.get('type'), 'value': final_value})
+  
 
 @socketio.on('save_session_data')
 def handle_save_session(data):
@@ -333,15 +323,27 @@ def handle_save_session(data):
 
 # (Fungsi untuk membaca data serial secara terus-menerus di background)
 def read_serial_data():
+    """Fungsi yang berjalan di background untuk membaca data dari port serial."""
+    import time
+    print(">>> Thread pembaca serial dimulai...")
     while True:
-        if ser.in_waiting > 0:
-            line = ser.readline().decode('utf-8').rstrip()
-            # Di sini Anda perlu mem-parsing data dari ESP32
-            # Contoh: "kolesterol:150.5"
-            parts = line.split(':')
-            if len(parts) == 2:
-                tipe, nilai = parts
-                socketio.emit('measurement_update', {'type': tipe, 'value': float(nilai)})
+        try:
+            if ser and ser.is_open:
+                # line = ser.readline().decode('utf-8', errors='ignore').rstrip()
+                # print(f"Data mentah dari serial: '{line}'")
+                if ser.in_waiting > 0:
+                    line = ser.readline().decode('utf-8', errors='ignore').rstrip()
+                    if line:
+                        print(f"Data mentah dari serial: '{line}'")
+                        parts = line.split(':')
+                        if len(parts) == 2:
+                            tipe, nilai = parts[0].strip(), parts[1].strip()
+                            socketio.emit('measurement_update', {'type': tipe, 'value': float(nilai)})
+            else:
+                time.sleep(2) # Beri jeda jika serial tidak terhubung
+        except Exception as e:
+            print(f"Error di dalam thread serial: {e}")
+            time.sleep(5)
 
 
 # Route API untuk mencari pasien (fitur autocomplete)
@@ -661,12 +663,8 @@ if __name__ == '__main__':
     except psycopg2.OperationalError as e:
         print("Koneksi ke database gagal. Pastikan database berjalan.")
         print(e)
-    
-    if ser:
-        print("Memulai thread untuk membaca data serial...")
-        serial_thread = threading.Thread(target=read_serial_data)
-        serial_thread.daemon = True
-        serial_thread.start()
- 
+        
+    socketio.start_background_task(target=read_serial_data)
+
     socketio.run(app, debug=True, host='0.0.0.0', port=5000, allow_unsafe_werkzeug=True)
     # app.run(debug=True, host='0.0.0.0', port=5000)

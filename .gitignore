@@ -5,6 +5,8 @@ __pycache__/
 
 postgres-data/
 
+node-red-data/
+
 venv/
 env/
 
