@@ -252,10 +252,41 @@
 		});
 
 		socket.on("measurement_update", function (data) {
+			// LOG 1: Tampilkan semua data yang masuk dari server
+			console.log("Menerima 'measurement_update':", data);
+
+			if (data.value === "STOP" || (typeof data.value === "string" && data.value.toUpperCase() === "STOP")) {
+				// LOG 2: Konfirmasi bahwa blok IF untuk 'STOP' berhasil dimasuki
+				console.log("Pesan STOP terdeteksi untuk tipe:", data.type);
+
+				const resultBox = $(`.result-box[data-type=${data.type}]`);
+				const lastValueText = resultBox.find(".value").text();
+				// LOG 3: Lihat teks mentah yang diambil dari layar
+				console.log("Teks nilai terakhir dari layar:", lastValueText);
+
+				const lastValue = parseFloat(lastValueText);
+				// LOG 4: Lihat hasil konversi ke angka
+				console.log("Nilai setelah dikonversi (parseFloat):", lastValue);
+
+				// Pengecekan keamanan jika konversi gagal
+				if (!isNaN(lastValue)) {
+					handleMeasurementStopped({ type: data.type, value: lastValue });
+				} else {
+					console.error(
+						"GAGAL mengonversi nilai terakhir ke angka! Memanggil handleMeasurementStopped dengan nilai 0."
+					);
+					// Jika gagal, panggil dengan nilai 0 agar UI tetap berjalan dan tidak macet
+					handleMeasurementStopped({ type: data.type, value: 0 });
+				}
+				return; // Hentikan eksekusi
+			}
+
+			// LOG 5: Konfirmasi ini adalah pembaruan nilai biasa
+			console.log(`Update nilai untuk ${data.type}: ${data.value}`);
 			$(`.result-box[data-type=${data.type}] .value`).text(`${data.value} mg/dL`);
 		});
 
-		socket.on("measurement_stopped", function (data) {
+		function handleMeasurementStopped(data) {
 			currentSessionData.results[data.type] = data.value;
 			console.log("Hasil diperbarui:", currentSessionData);
 
@@ -263,45 +294,38 @@
 			const measureButton = $(`.btn-measure[data-type=${data.type}]`);
 			measureButton.text("Selesai").css("background-color", "#28a745");
 
-			// Hapus tombol lama jika ada
 			resultBox.find(".action-buttons").remove();
 
-			// Buat kontainer untuk tombol baru
 			const buttonContainer = $(
 				'<div class="action-buttons" style="margin-top: 15px; display: flex; gap: 10px; justify-content: center;"></div>'
 			);
 
-			// Buat tombol "Ulang"
 			const repeatButton = $('<button class="btn-ulang">Ulang</button>').on("click", function () {
-				// Hapus tombol-tombol
 				buttonContainer.remove();
-
-				// Reset tampilan box
 				resultBox.find(".value").text("- mg/dL");
 
-				// Reset dan aktifkan kembali tombol pilihan pengukuran
-				measureButton
-					.prop("disabled", false)
-					.css("background-color", "white")
-					.text(measureButton.text().replace("Selesai", "Kolesterol")); // Sesuaikan teks jika perlu
+				// Dapatkan kembali teks asli tombolnya
+				let originalText = "Ukur";
+				if (data.type === "cholesterol") originalText = "Kolesterol";
+				if (data.type === "asam_urat") originalText = "Asam Urat";
+				if (data.type === "gula_darah") originalText = "Gula Darah";
 
-				// Kirim lagi event untuk memulai pengukuran
+				measureButton.prop("disabled", false).css("background-color", "white").text(originalText);
+
 				socket.emit("start_measurement", { type: data.type, flag: measureButton.data("flag") });
 			});
 
-			// Buat tombol "OK"
 			const okButton = $('<button class="btn-ok">OK</button>').on("click", function () {
-				// Hapus tombol-tombol
 				buttonContainer.remove();
-
-				// Tampilkan kembali modal pilihan pengukuran
 				$("#measurementChoiceModal").css("display", "flex");
 			});
 
-			// Tambahkan tombol-tombol ke kontainer, lalu ke result-box
 			buttonContainer.append(repeatButton).append(okButton);
 			resultBox.append(buttonContainer);
-		});
+		}
+
+		// Terakhir, pastikan handler socket.on('measurement_stopped') sekarang memanggil fungsi baru ini
+		socket.on("measurement_stopped", handleMeasurementStopped);
 
 		// --- PERBAIKAN UTAMA DI SINI ---
 		socket.on("save_status", function (data) {

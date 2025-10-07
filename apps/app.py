@@ -41,15 +41,18 @@ def on_connect(client, userdata, flags, rc):
     print(f"Subscribe ke topik: {MQTT_DATA_TOPIC}")
 
 def on_message(client, userdata, msg):
-    """Dipanggil setiap ada data dari Node-RED."""
+    """Menerima data dari MQTT dan meneruskannya apa adanya ke browser."""
     payload = msg.payload.decode('utf-8')
     print(f"Data diterima dari MQTT topik '{msg.topic}': {payload}")
     
-    # Parsing data dan kirim ke browser via WebSocket
     parts = payload.split(':')
     if len(parts) == 2:
-        tipe, nilai = parts[0].strip(), parts[1].strip()
-        socketio.emit('measurement_update', {'type': tipe, 'value': float(nilai)})
+        tipe, nilai_str = parts[0].strip(), parts[1].strip()
+        try:
+            nilai = float(nilai_str)
+        except ValueError:
+            nilai = nilai_str # Ini akan menjadi "STOP"
+        socketio.emit('measurement_update', {'type': tipe, 'value': nilai})
 
 # Inisialisasi MQTT Client
 mqtt_client = mqtt.Client()
