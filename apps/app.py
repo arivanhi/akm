@@ -8,6 +8,7 @@ from flask import Flask, render_template, request, redirect, url_for, flash, ses
 from flask_socketio import SocketIO, emit
 from dotenv import load_dotenv
 import paho.mqtt.client as mqtt
+import requests
 
 # Muat environment variables dari file .env
 load_dotenv()
@@ -243,6 +244,59 @@ def measure():
             conn.close()
 
     return render_template('measure.html')
+
+@app.route('/upload_data', methods=['POST'])
+def upload_data():
+    """Mengambil semua data pengukuran, format ke JSON, dan kirim ke server eksternal."""
+    if g.user is None:
+        return jsonify({'status': 'error', 'message': 'Akses ditolak'}), 401
+    
+    # 1. Ambil semua data dari database
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT
+            p.nama_lengkap, p.nik, p.umur, p.jenis_kelamin,
+            m.measured_at, m.cholesterol_value, m.uric_acid_value, m.blood_sugar_value
+        FROM measurements m
+        JOIN patients p ON m.patient_id = p.id
+        ORDER BY m.measured_at;
+    """)
+    all_data = cur.fetchall()
+    cur.close()
+    conn.close()
+
+    if not all_data:
+        return jsonify({'status': 'error', 'message': 'Tidak ada data untuk diunggah.'}), 404
+
+    # 2. Konversi data ke format JSON (list of dictionaries)
+    payload = []
+    for row in all_data:
+        payload.append({
+            "nama_pasien": row[0],
+            "nik": row[1],
+            "umur": row[2],
+            "jenis_kelamin": row[3],
+            "tanggal_pengukuran": row[4].isoformat(),
+            "kolesterol": row[5],
+            "asam_urat": row[6],
+            "gula_darah": row[7]
+        })
+
+    # 3. Kirim data ke API eksternal
+    external_api_url = os.getenv('EXTERNAL_API_URL')
+    if not external_api_url:
+        return jsonify({'status': 'error', 'message': 'URL API eksternal tidak diatur.'}), 500
+
+    try:
+        response = requests.post(external_api_url, json=payload, timeout=30) # Timeout 30 detik
+        response.raise_for_status()  # Ini akan raise error jika status code bukan 2xx
+
+        return jsonify({'status': 'success', 'message': f'Berhasil mengunggah {len(payload)} data pengukuran!'})
+
+    except requests.exceptions.RequestException as e:
+        print(f"Gagal mengunggah data: {e}")
+        return jsonify({'status': 'error', 'message': 'Gagal terhubung ke server eksternal.'}), 500
 
 
 # --- HANDLER UNTUK WEBSOCKETS ---

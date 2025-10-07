@@ -59,6 +59,7 @@
 	<div class="page-header">
 		<h1 class="page-title">Data Pengukuran Pasien</h1>
 		<div class="header-actions">
+			<button id="btnUploadData" class="btn-export-all" style="background-color: #28a745">Upload Data</button>
 			<a href="#" id="exportSelectedBtn" class="btn-export-all disabled">Export Selected</a>
 			<a href="{{ url_for('export_all') }}" class="btn-export-all">Export All</a>
 		</div>
@@ -345,6 +346,32 @@
 		$("#backToListBtn").on("click", function () {
 			detailView.hide();
 			listView.show();
+		});
+		$("#btnUploadData").on("click", function () {
+			if (!confirm("Apakah Anda yakin ingin mengunggah semua data pengukuran ke server?")) {
+				return;
+			}
+
+			const button = $(this);
+			const originalText = button.text();
+			button.prop("disabled", true).text("Mengunggah...");
+
+			$.ajax({
+				url: "{{ url_for('upload_data') }}",
+				method: "POST",
+				success: function (response) {
+					showNotification(response.message, "success");
+				},
+				error: function (xhr) {
+					// xhr.responseJSON.message akan berisi pesan error dari server Flask kita
+					const message = xhr.responseJSON ? xhr.responseJSON.message : "Terjadi error tidak diketahui.";
+					showNotification(message, "danger");
+				},
+				complete: function () {
+					// Kembalikan tombol ke keadaan semula setelah selesai
+					button.prop("disabled", false).text(originalText);
+				},
+			});
 		});
 	});
 </script>
