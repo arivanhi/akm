@@ -25,6 +25,7 @@ load_model_path = 'model/xgboost_model.json'
 xgb_model = xgb.XGBClassifier()
 xgb_model.load_model(load_model_path)
 xgb_predictions_encoded = xgb_model.predict(X_train)
+print(xgb_predictions_encoded.shape)
 xgb_predictions = label_encoder.inverse_transform(xgb_predictions_encoded)
 xgb_accuracy = accuracy_score(Y_train, xgb_predictions)
 print("XGBoost Accuracy (loaded model):", xgb_accuracy)
@@ -34,3 +35,6 @@ load_model_path = 'model/knn_predictions.npy'
 knn_predictions = np.load(load_model_path)
 knn_accuracy = accuracy_score(Y_train, knn_predictions)
 print("KNN Accuracy (loaded predictions):", knn_accuracy)
+
+Gula = (xgb_predictions_encoded[0]+knn_predictions[0])/2
+print(Gula)

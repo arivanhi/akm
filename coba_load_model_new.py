@@ -21,9 +21,19 @@ load_model_path = 'model/xgboost_asam_urat_model.json'
 xgb_model = xgb.XGBClassifier()
 xgb_model.load_model(load_model_path)
 xgb_predictions_encoded = xgb_model.predict(X_train)
+print(xgb_predictions_encoded)
 xgb_predictions = label_encoder.inverse_transform(xgb_predictions_encoded)
 xgb_accuracy = accuracy_score(y_train, xgb_predictions)
 print("XGBoost Accuracy (loaded model):", xgb_accuracy)
+
+print("Loading KNN predictions from saved file...")
+load_model_path = 'model/knn_asam_urat_predictions.npy'
+knn_predictions = np.load(load_model_path)
+knn_accuracy = accuracy_score(y_train, knn_predictions)
+print("KNN Accuracy (loaded predictions):", knn_accuracy)
+
+asam_urat = (xgb_predictions_encoded[0]+knn_predictions[0])/2
+print("prediksi asam urat: ", asam_urat)
 
 file_path = 'data/adc_kolesterol.csv'
 df = pd.read_csv(file_path)
@@ -44,3 +54,12 @@ xgb_predictions_encoded = xgb_model.predict(X_train)
 xgb_predictions = label_encoder.inverse_transform(xgb_predictions_encoded)
 xgb_accuracy = accuracy_score(y_train, xgb_predictions)
 print("XGBoost Accuracy (loaded model):", xgb_accuracy)
+
+print("Loading KNN predictions from saved file...")
+load_model_path = 'model/knn_kolesterol_predictions.npy'
+knn_predictions = np.load(load_model_path)
+knn_accuracy = accuracy_score(y_train, knn_predictions)
+print("KNN Accuracy (loaded predictions):", knn_accuracy)
+
+kolesterol = (xgb_predictions_encoded[0]+knn_predictions[0])/2
+print("prediksi kolesterol: ", kolesterol)
