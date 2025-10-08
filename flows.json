@@ -32,7 +32,7 @@
         "type": "serial-port",
         "name": "",
         "serialport": "/dev/ttyUSB0",
-        "serialbaud": "9600",
+        "serialbaud": "115200",
         "databits": 8,
         "parity": "none",
         "stopbits": 1,
@@ -84,13 +84,11 @@
         "z": "e80c7143e2a3d294",
         "name": "esp32",
         "serial": "5fca81e5eb0ff2ec",
-        "x": 170,
+        "x": 90,
         "y": 260,
         "wires": [
             [
-                "0ae88c07cf729856",
-                "bb04dafd854e5da9",
-                "e4e180088539c6a5"
+                "35e88edf31850ac2"
             ]
         ]
     },
@@ -106,7 +104,7 @@
         "complete": "false",
         "statusVal": "",
         "statusType": "auto",
-        "x": 400,
+        "x": 540,
         "y": 200,
         "wires": []
     },
@@ -161,7 +159,7 @@
         "type": "mqtt out",
         "z": "e80c7143e2a3d294",
         "name": "",
-        "topic": "akm/data",
+        "topic": "akm/prediction_data",
         "qos": "2",
         "retain": "",
         "respTopic": "",
@@ -170,34 +168,9 @@
         "correl": "",
         "expiry": "",
         "broker": "6fb353f83194865b",
-        "x": 400,
+        "x": 520,
         "y": 260,
         "wires": []
-    },
-    {
-        "id": "10b449112a2797a8",
-        "type": "trigger",
-        "z": "e80c7143e2a3d294",
-        "name": "",
-        "op1": "",
-        "op2": "0",
-        "op1type": "nul",
-        "op2type": "num",
-        "duration": "1",
-        "extend": false,
-        "overrideDelay": false,
-        "units": "s",
-        "reset": "",
-        "bytopic": "all",
-        "topic": "topic",
-        "outputs": 1,
-        "x": 400,
-        "y": 140,
-        "wires": [
-            [
-                "80af0bbfb654a139"
-            ]
-        ]
     },
     {
         "id": "80af0bbfb654a139",
@@ -205,8 +178,8 @@
         "z": "e80c7143e2a3d294",
         "name": "espgetcommand",
         "serial": "5fca81e5eb0ff2ec",
-        "x": 610,
-        "y": 140,
+        "x": 770,
+        "y": 420,
         "wires": []
     },
     {
@@ -227,33 +200,7 @@
         "wires": [
             [
                 "4ab6cb578708e614",
-                "f70dd21eccbe259f",
-                "10b449112a2797a8"
-            ]
-        ]
-    },
-    {
-        "id": "e4e180088539c6a5",
-        "type": "trigger",
-        "z": "e80c7143e2a3d294",
-        "name": "",
-        "op1": "",
-        "op2": "",
-        "op1type": "nul",
-        "op2type": "payl",
-        "duration": "1",
-        "extend": false,
-        "overrideDelay": false,
-        "units": "s",
-        "reset": "",
-        "bytopic": "all",
-        "topic": "topic",
-        "outputs": 1,
-        "x": 340,
-        "y": 360,
-        "wires": [
-            [
-                "90c3085f5fc6ce3f"
+                "f70dd21eccbe259f"
             ]
         ]
     },
@@ -292,24 +239,104 @@
         "wires": []
     },
     {
-        "id": "90c3085f5fc6ce3f",
+        "id": "35e88edf31850ac2",
         "type": "function",
         "z": "e80c7143e2a3d294",
-        "name": "function 2",
-        "func": "let data = String(msg.payload)\nconst myArray = data.split(\":\")\nlet word = myArray[0]\nword = word + \":STOP\"\nmsg.payload = word\nreturn msg;",
+        "name": "function 3",
+        "func": "// Definisikan panjang fitur yang dibutuhkan\nconst FEATURE_LENGTHS = {\n    'cholesterol': 155,\n    'asam_urat': 160,\n    'gula_darah': 250\n};\nmsg.STOP=false;\n\n// Ambil payload dan parsing\nconst payload = msg.payload;\nconst parts = payload.split(':');\nif (parts.length !== 2) { return null; }\n\nconst type = parts[0].trim();\nconst value = parseFloat(parts[1]);\nif (!FEATURE_LENGTHS[type] || isNaN(value)) { return null; }\n\n// Dapatkan array dari context atau buat baru\nlet dataArray = context.get(type) || [];\ndataArray.push(value);\n\nconst currentLength = dataArray.length;\nconst targetLength = FEATURE_LENGTHS[type];\n\n// Simpan kembali array ke context\ncontext.set(type, dataArray);\n\n// LOG PROGRES: Tampilkan progres setiap 25 data\nif (currentLength % 25 === 0) {\n    node.warn(`Progres untuk ${type}: ${currentLength} / ${targetLength}`);\n}\n\n// Cek apakah array sudah penuh\nif (currentLength >= targetLength) {\n    node.warn(`Target untuk ${type} tercapai! Mengirim data...`);\n    msg.STOP = true;\n    \n    // Siapkan pesan dan kirim\n    msg.payload = {\n        type: type,\n        data: dataArray\n    };\n    \n    // Reset context untuk batch berikutnya\n    context.set(type, []); \n    return msg;\n    \n} else {\n    // Jika belum penuh, hentikan alur\n    return null;\n}",
         "outputs": 1,
         "timeout": 0,
         "noerr": 0,
         "initialize": "",
         "finalize": "",
         "libs": [],
-        "x": 540,
+        "x": 280,
+        "y": 260,
+        "wires": [
+            [
+                "0ae88c07cf729856",
+                "bb04dafd854e5da9",
+                "ed201c51222ff5a4",
+                "9dbfd798c162e0e4"
+            ]
+        ]
+    },
+    {
+        "id": "ed201c51222ff5a4",
+        "type": "function",
+        "z": "e80c7143e2a3d294",
+        "name": "function 5",
+        "func": "let type = msg.payload.type\nif (msg.STOP){\n    msg.payload = type + \":STOP\"\n}\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 480,
         "y": 360,
         "wires": [
             [
-                "26ba72a31716cc88",
-                "0b9ecdd16b95b083"
+                "0b9ecdd16b95b083",
+                "26ba72a31716cc88"
             ]
         ]
+    },
+    {
+        "id": "9dbfd798c162e0e4",
+        "type": "function",
+        "z": "e80c7143e2a3d294",
+        "name": "function 2",
+        "func": "let type = msg.payload.type\nif (msg.STOP){\n    msg.payload = 0\n}\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 480,
+        "y": 420,
+        "wires": [
+            [
+                "80af0bbfb654a139"
+            ]
+        ]
+    },
+    {
+        "id": "d48dcf45ecf1b8cd",
+        "type": "mqtt in",
+        "z": "e80c7143e2a3d294",
+        "name": "",
+        "topic": "akm/prediction_result",
+        "qos": "2",
+        "datatype": "auto-detect",
+        "broker": "6fb353f83194865b",
+        "nl": false,
+        "rap": true,
+        "rh": 0,
+        "inputs": 0,
+        "x": 220,
+        "y": 480,
+        "wires": [
+            [
+                "6b669bef239b9e6e"
+            ]
+        ]
+    },
+    {
+        "id": "6b669bef239b9e6e",
+        "type": "debug",
+        "z": "e80c7143e2a3d294",
+        "name": "debug 4",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "false",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 440,
+        "y": 480,
+        "wires": []
     }
 ]
