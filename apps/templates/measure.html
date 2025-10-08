@@ -85,15 +85,21 @@
 	<div class="results-grid">
 		<div class="result-box" data-type="cholesterol">
 			<h4>Kolesterol</h4>
-			<p class="value">- mg/dL</p>
+			<p class="measure-status"></p>
+			<p class="value">-</p>
+			<p class="numeric-indicator">-- mg/dL</p>
 		</div>
 		<div class="result-box" data-type="asam_urat">
 			<h4>Asam Urat</h4>
-			<p class="value">- mg/dL</p>
+			<p class="measure-status"></p>
+			<p class="value">-</p>
+			<p class="numeric-indicator">-- mg/dL</p>
 		</div>
 		<div class="result-box" data-type="gula_darah">
 			<h4>Gula Darah</h4>
-			<p class="value">- mg/dL</p>
+			<p class="measure-status"></p>
+			<p class="value">-</p>
+			<p class="numeric-indicator">-- mg/dL</p>
 		</div>
 	</div>
 </div>
@@ -280,6 +286,21 @@
 				}
 				return; // Hentikan eksekusi
 			}
+
+			socket.on("prediction_result", function (data) {
+				console.log("Menerima hasil prediksi:", data);
+				const resultBox = $(`.result-box[data-type=${data.type}]`);
+
+				// Hapus status "Mengukur..."
+				resultBox.find(".measure-status").text("");
+
+				// Tampilkan hasil prediksi dan nilai numerik
+				const lastValueText = resultBox.find(".value").text(data.result);
+				resultBox.find(".numeric-indicator").text(`${data.numeric_value} mg/dL`);
+				const lastValue = parseFloat(lastValueText);
+				// Panggil fungsi untuk menampilkan tombol OK/Ulang
+				handleMeasurementStopped({ type: data.type, value: lastValue });
+			});
 
 			// LOG 5: Konfirmasi ini adalah pembaruan nilai biasa
 			console.log(`Update nilai untuk ${data.type}: ${data.value}`);

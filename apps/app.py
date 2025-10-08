@@ -4,11 +4,19 @@ import csv
 import psycopg2
 import bcrypt
 import asyncio
+import json
 from flask import Flask, render_template, request, redirect, url_for, flash, session, g, jsonify, Response
 from flask_socketio import SocketIO, emit
 from dotenv import load_dotenv
 import paho.mqtt.client as mqtt
 import requests
+
+import xgboost as xgb
+import numpy as np
+from sklearn.preprocessing import LabelEncoder
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.metrics import confusion_matrix, accuracy_score
+
 
 # Muat environment variables dari file .env
 load_dotenv()
@@ -16,7 +24,34 @@ load_dotenv()
 MQTT_BROKER_HOST = os.getenv('MQTT_BROKER_HOST', 'localhost')
 MQTT_DATA_TOPIC = "akm/data"
 MQTT_COMMAND_TOPIC = "akm/command"
+MQTT_PREDICTION_TOPIC = "akm/prediction_data"
 
+load_modelxg_as_path = 'model/xgboost_asam_urat_model.json'
+load_modelknn_as_path = 'model/knn_asam_urat_predictions.npy'
+
+load_modelxg_kol_path = 'model/xgboost_kolesterol_model.json'
+load_modelknn_kol_path = 'model/knn_kolesterol_predictions.npy'
+
+load_modelxg_glu_path = 'model/xgboost_model.json'
+load_modelknn_glu_path = 'model/knn_predictions.npy'
+
+label_encoder = LabelEncoder()
+print("Loading model xboost and predictions from saved files...")
+try:
+    xgb_model_as = xgb.XGBClassifier()
+    xgb_model_as.load_model(load_modelxg_as_path)
+    knn_predictions_as = np.load(load_modelknn_as_path)
+    print("Model Asam Urat loaded successfully.")
+    xgb_model_kol = xgb.XGBClassifier()
+    xgb_model_kol.load_model(load_modelxg_kol_path)
+    knn_predictions_kol = np.load(load_modelknn_kol_path)
+    print("Model Kolesterol loaded successfully.")
+    xgb_model_glu = xgb.XGBClassifier()
+    xgb_model_glu.load_model(load_modelxg_glu_path)
+    knn_predictions_glu = np.load(load_modelknn_glu_path)
+    print("Model Gula Darah loaded successfully.")
+except Exception as e:
+    print(f"Error loading models: {e}")
 # --- Konfigurasi Aplikasi Flask ---
 app = Flask(__name__)
 @app.before_request
@@ -34,26 +69,84 @@ def load_logged_in_user():
 app.secret_key = os.getenv('SECRET_KEY', os.urandom(24).hex())
 socketio = SocketIO(app, async_mode='threading')
 
+# load model
+
 # --- Fungsi-fungsi Bantuan & Middleware (Tidak Berubah) ---
 # --- Logika MQTT Client ---
 def on_connect(client, userdata, flags, rc):
     print(f"Terhubung ke MQTT Broker dengan hasil: {rc}")
     client.subscribe(MQTT_DATA_TOPIC)
-    print(f"Subscribe ke topik: {MQTT_DATA_TOPIC}")
+    client.subscribe(MQTT_PREDICTION_TOPIC)
+    print(f"Subscribe ke topik: {MQTT_DATA_TOPIC} dan {MQTT_PREDICTION_TOPIC}")
+
+# def on_message(client, userdata, msg):
+#     """Menerima data dari MQTT dan meneruskannya apa adanya ke browser."""
+#     payload = msg.payload.decode('utf-8')
+#     print(f"Data diterima dari MQTT topik '{msg.topic}': {payload}")
+    
+#     parts = payload.split(':')
+#     if len(parts) == 2:
+#         tipe, nilai_str = parts[0].strip(), parts[1].strip()
+#         try:
+#             nilai = float(nilai_str)
+#         except ValueError:
+#             nilai = nilai_str # Ini akan menjadi "STOP"
+#         socketio.emit('measurement_update', {'type': tipe, 'value': nilai})
 
 def on_message(client, userdata, msg):
-    """Menerima data dari MQTT dan meneruskannya apa adanya ke browser."""
+    """Menerima data dari MQTT, lakukan prediksi, dan kirim hasil ke browser."""
     payload = msg.payload.decode('utf-8')
-    print(f"Data diterima dari MQTT topik '{msg.topic}': {payload}")
     
-    parts = payload.split(':')
-    if len(parts) == 2:
-        tipe, nilai_str = parts[0].strip(), parts[1].strip()
+    if msg.topic == MQTT_PREDICTION_TOPIC:
+        print(f"Data diterima dari MQTT topik '{msg.topic}': {payload}")
+        print("Menerima data prediksi...")
         try:
-            nilai = float(nilai_str)
-        except ValueError:
-            nilai = nilai_str # Ini akan menjadi "STOP"
-        socketio.emit('measurement_update', {'type': tipe, 'value': nilai})
+            sensor_package = json.loads(payload)
+            data_type = sensor_package.get('type')
+            sensor_data = sensor_package.get('data')
+            
+            if not sensor_data or not data_type:
+                raise ValueError("Data atau tipe tidak lengkap.")
+            data_np = np.array([sensor_data])
+            data_np = np.round(data_np).astype(int)
+            client.publish(MQTT_PREDICTION_TOPIC, data_np)
+            
+            if data_type == 'asam_urat' and xgb_model_as:
+                xgb_pred = xgb_model_as.predict(data_np)
+                xgb_pred_encode = label_encoder.inverse_transform(xgb_pred)
+                knn_pred = knn_predictions_as(data_np)
+                hasil_akhir = (xgb_pred_encode[0] + knn_pred[0]) / 2
+                print(f"Prediksi Asam Urat: {hasil_akhir}")
+            
+            elif data_type == 'cholesterol' and xgb_model_kol:
+                xgb_pred = xgb_model_kol.predict(data_np)
+                xgb_pred_encode = label_encoder.inverse_transform(xgb_pred)
+                knn_pred = knn_predictions_kol(data_np)
+                hasil_akhir = (xgb_pred_encode[0] + knn_pred[0]) / 2
+                print(f"Prediksi Kolesterol: {hasil_akhir}")
+            
+            elif data_type == 'gula_darah' and xgb_model_glu:
+                xgb_pred = xgb_model_glu.predict(data_np)
+                xgb_pred_encode = label_encoder.inverse_transform(xgb_pred)
+                knn_pred = knn_predictions_glu(data_np)
+                hasil_akhir = (xgb_pred_encode[0] + knn_pred[0]) / 2
+                print(f"Prediksi Gula Darah: {hasil_akhir}")
+            external_api_url = os.getenv('EXTERNAL_API_URL')    
+            response = requests.post(external_api_url, json=hasil_akhir, timeout=30) # Timeout 30 detik
+            response.raise_for_status() 
+            socketio.emit('prediction_result', {'type': data_type, 'value': hasil_akhir})
+        except Exception as e:
+            print(f"Gagal memproses data prediksi: {e}")
+        
+    if msg.topic == MQTT_DATA_TOPIC:
+        parts = payload.split(':')
+        if len(parts) == 2:
+            tipe, nilai_str = parts[0].strip(), parts[1].strip()
+            try:
+                nilai = float(nilai_str)
+            except ValueError:
+                nilai = nilai_str # Ini akan menjadi "STOP"
+            socketio.emit('measurement_update', {'type': tipe, 'value': nilai})
 
 # Inisialisasi MQTT Client
 mqtt_client = mqtt.Client()
