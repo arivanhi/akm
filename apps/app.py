@@ -18,6 +18,7 @@ from sklearn.neighbors import KNeighborsClassifier
 from sklearn.metrics import confusion_matrix, accuracy_score
 
 
+
 # Muat environment variables dari file .env
 load_dotenv()
 
@@ -25,6 +26,7 @@ MQTT_BROKER_HOST = os.getenv('MQTT_BROKER_HOST', 'localhost')
 MQTT_DATA_TOPIC = "akm/data"
 MQTT_COMMAND_TOPIC = "akm/command"
 MQTT_PREDICTION_TOPIC = "akm/prediction_data"
+MQTT_RESULT_TOPIC = "akm/prediction_result" 
 
 load_modelxg_as_path = 'model/xgboost_asam_urat_model.json'
 load_modelknn_as_path = 'model/knn_asam_urat_predictions.npy'
@@ -77,7 +79,8 @@ def on_connect(client, userdata, flags, rc):
     print(f"Terhubung ke MQTT Broker dengan hasil: {rc}")
     client.subscribe(MQTT_DATA_TOPIC)
     client.subscribe(MQTT_PREDICTION_TOPIC)
-    print(f"Subscribe ke topik: {MQTT_DATA_TOPIC} dan {MQTT_PREDICTION_TOPIC}")
+    client.subscribe(MQTT_RESULT_TOPIC)
+    print(f"Subscribe ke topik: {MQTT_DATA_TOPIC}, {MQTT_RESULT_TOPIC} dan {MQTT_PREDICTION_TOPIC}")
 
 # def on_message(client, userdata, msg):
 #     """Menerima data dari MQTT dan meneruskannya apa adanya ke browser."""
@@ -108,35 +111,45 @@ def on_message(client, userdata, msg):
             if not sensor_data or not data_type:
                 raise ValueError("Data atau tipe tidak lengkap.")
             data_np = np.array([sensor_data])
-            data_np = np.round(data_np).astype(int)
-            client.publish(MQTT_PREDICTION_TOPIC, data_np)
+            hasil_akhir = 0.0
+            numeric_value = round(sum(sensor_data) / len(sensor_data), 2)
             
             if data_type == 'asam_urat' and xgb_model_as:
                 xgb_pred = xgb_model_as.predict(data_np)
-                xgb_pred_encode = label_encoder.inverse_transform(xgb_pred)
-                knn_pred = knn_predictions_as(data_np)
-                hasil_akhir = (xgb_pred_encode[0] + knn_pred[0]) / 2
+                # xgb_pred_encode = label_encoder.inverse_transform(xgb_pred)
+                knn_pred = knn_predictions_as
+                hasil_akhir = (xgb_pred[0] + knn_pred[0]) / 2
                 print(f"Prediksi Asam Urat: {hasil_akhir}")
             
             elif data_type == 'cholesterol' and xgb_model_kol:
                 xgb_pred = xgb_model_kol.predict(data_np)
-                xgb_pred_encode = label_encoder.inverse_transform(xgb_pred)
-                knn_pred = knn_predictions_kol(data_np)
-                hasil_akhir = (xgb_pred_encode[0] + knn_pred[0]) / 2
+                # xgb_pred_encode = label_encoder.inverse_transform(xgb_pred)
+                knn_pred = knn_predictions_kol
+                hasil_akhir = (xgb_pred[0] + knn_pred[0]) / 2
                 print(f"Prediksi Kolesterol: {hasil_akhir}")
             
             elif data_type == 'gula_darah' and xgb_model_glu:
                 xgb_pred = xgb_model_glu.predict(data_np)
-                xgb_pred_encode = label_encoder.inverse_transform(xgb_pred)
-                knn_pred = knn_predictions_glu(data_np)
-                hasil_akhir = (xgb_pred_encode[0] + knn_pred[0]) / 2
+                # xgb_pred_encode = label_encoder.inverse_transform(xgb_pred)
+                knn_pred = knn_predictions_glu
+                hasil_akhir = (xgb_pred[0] + knn_pred[0]) / 2
                 print(f"Prediksi Gula Darah: {hasil_akhir}")
-            external_api_url = os.getenv('EXTERNAL_API_URL')    
-            response = requests.post(external_api_url, json=hasil_akhir, timeout=30) # Timeout 30 detik
-            response.raise_for_status() 
-            socketio.emit('prediction_result', {'type': data_type, 'value': hasil_akhir})
+                
+            result_payload = {
+                'type': data_type,
+                'value': float(hasil_akhir),
+                # 'numeric_value': numeric_value
+            }
+            client.publish(MQTT_RESULT_TOPIC, json.dumps(result_payload))
         except Exception as e:
             print(f"Gagal memproses data prediksi: {e}")
+    elif msg.topic == MQTT_RESULT_TOPIC:
+        print(f"Data hasil prediksi diterima dari MQTT topik '{msg.topic}': {payload}")
+        try:
+            result_data = json.loads(payload)
+            socketio.emit('prediction_result', result_data)
+        except Exception as e:
+            print(f"Gagal memproses data hasil prediksi: {e}")
         
     if msg.topic == MQTT_DATA_TOPIC:
         parts = payload.split(':')
@@ -759,4 +772,4 @@ if __name__ == '__main__':
 
     # Jalankan server web Flask-SocketIO
     print("Menjalankan server web Flask...")
-    socketio.run(app, debug=False, host='0.0.0.0', port=5000, allow_unsafe_werkzeug=True)
+    socketio.run(app, debug=True, host='0.0.0.0', port=5000, allow_unsafe_werkzeug=True)

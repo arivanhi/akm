@@ -87,19 +87,16 @@
 			<h4>Kolesterol</h4>
 			<p class="measure-status"></p>
 			<p class="value">-</p>
-			<p class="numeric-indicator">-- mg/dL</p>
 		</div>
 		<div class="result-box" data-type="asam_urat">
 			<h4>Asam Urat</h4>
 			<p class="measure-status"></p>
 			<p class="value">-</p>
-			<p class="numeric-indicator">-- mg/dL</p>
 		</div>
 		<div class="result-box" data-type="gula_darah">
 			<h4>Gula Darah</h4>
 			<p class="measure-status"></p>
 			<p class="value">-</p>
-			<p class="numeric-indicator">-- mg/dL</p>
 		</div>
 	</div>
 </div>
@@ -141,12 +138,46 @@
 			// 5. Tampilkan kembali modal pilihan pasien awal
 			$("#patientChoiceModal").css("display", "flex");
 		}
+		function showActionButtons(type) {
+			const resultBox = $(`.result-box[data-type=${type}]`);
+			const measureButton = $(`.btn-measure[data-type=${type}]`);
+
+			measureButton.text("Selesai").css("background-color", "#28a745");
+			resultBox.find(".measure-status").text("Pengukuran Selesai");
+
+			resultBox.find(".action-buttons").remove();
+			const buttonContainer = $(
+				'<div class="action-buttons" style="margin-top: 15px; display: flex; gap: 10px; justify-content: center;"></div>'
+			);
+
+			const repeatButton = $('<button class="btn-ulang">Ulang</button>').on("click", function () {
+				buttonContainer.remove();
+				resultBox.find(".value").text("-");
+				//resultBox.find(".numeric-indicator").text("-- mg/dL");
+
+				let originalText = measureButton
+					.data("type")
+					.replace(/_/g, " ")
+					.replace(/\b\w/g, (l) => l.toUpperCase());
+				measureButton.prop("disabled", false).css("background-color", "white").text(originalText);
+
+				socket.emit("start_measurement", { type: type, flag: measureButton.data("flag") });
+			});
+
+			const okButton = $('<button class="btn-ok">OK</button>').on("click", function () {
+				buttonContainer.remove();
+				$("#measurementChoiceModal").css("display", "flex");
+			});
+
+			buttonContainer.append(repeatButton).append(okButton);
+			resultBox.append(buttonContainer);
+		}
 
 		// --- KONEKSI WEBSOCKET & STATE MANAGEMENT ---
 		const socket = io();
 		let currentSessionData = { patient_id: null, results: {} };
-		socket.on("connect", () => console.log("WebSocket Terhubung!"));
-
+		socket.on("connect", () => console.log(""));
+		resetMeasurementPage();
 		// --- FUNGSI BANTUAN ---
 		function showPatientDataAndControls(patient) {
 			currentSessionData.patient_id = patient.id;
@@ -239,7 +270,7 @@
 		$("#btnFinishSession").on("click", function () {
 			$("#measurementChoiceModal").hide();
 			if (Object.keys(currentSessionData.results).length > 0 && currentSessionData.patient_id) {
-				console.log("Mengirim data untuk disimpan:", currentSessionData);
+				//console.log("Mengirim data untuk disimpan:", currentSessionData);
 				socket.emit("save_session_data", currentSessionData);
 			} else {
 				showNotification("Tidak ada data baru untuk disimpan. Sesi selesai.", "info");
@@ -252,101 +283,49 @@
 		$(".btn-measure").on("click", function () {
 			const type = $(this).data("type");
 			const flag = $(this).data("flag");
+			const resultBox = $(`.result-box[data-type=${type}]`);
+
+			resultBox.find(".action-buttons").remove();
+			resultBox.find(".value").text("- mg/dL");
+			//resultBox.find(".numeric-indicator").text("-- mg/dL");
+			resultBox.find(".measure-status").text("Memulai pengukuran...");
+
 			$(this).prop("disabled", true).text("Mengukur...");
 			socket.emit("start_measurement", { type: type, flag: flag });
 			$("#measurementChoiceModal").hide();
 		});
 
+		// Handler ini untuk update nilai real-time & menangani sinyal STOP
 		socket.on("measurement_update", function (data) {
-			// LOG 1: Tampilkan semua data yang masuk dari server
-			console.log("Menerima 'measurement_update':", data);
-
-			if (data.value === "STOP" || (typeof data.value === "string" && data.value.toUpperCase() === "STOP")) {
-				// LOG 2: Konfirmasi bahwa blok IF untuk 'STOP' berhasil dimasuki
-				console.log("Pesan STOP terdeteksi untuk tipe:", data.type);
-
-				const resultBox = $(`.result-box[data-type=${data.type}]`);
-				const lastValueText = resultBox.find(".value").text();
-				// LOG 3: Lihat teks mentah yang diambil dari layar
-				console.log("Teks nilai terakhir dari layar:", lastValueText);
-
-				const lastValue = parseFloat(lastValueText);
-				// LOG 4: Lihat hasil konversi ke angka
-				console.log("Nilai setelah dikonversi (parseFloat):", lastValue);
-
-				// Pengecekan keamanan jika konversi gagal
-				if (!isNaN(lastValue)) {
-					handleMeasurementStopped({ type: data.type, value: lastValue });
-				} else {
-					console.error(
-						"GAGAL mengonversi nilai terakhir ke angka! Memanggil handleMeasurementStopped dengan nilai 0."
-					);
-					// Jika gagal, panggil dengan nilai 0 agar UI tetap berjalan dan tidak macet
-					handleMeasurementStopped({ type: data.type, value: 0 });
-				}
+			// Cek jika ini adalah sinyal STOP dari MQTT
+			if (typeof data.value === "string" && data.value.toUpperCase() === "STOP") {
+				//console.log("Sinyal STOP diterima untuk:", data.type);
+				showActionButtons(data.type); // Tampilkan tombol OK/Ulang
 				return; // Hentikan eksekusi
 			}
 
-			socket.on("prediction_result", function (data) {
-				console.log("Menerima hasil prediksi:", data);
-				const resultBox = $(`.result-box[data-type=${data.type}]`);
-
-				// Hapus status "Mengukur..."
-				resultBox.find(".measure-status").text("");
-
-				// Tampilkan hasil prediksi dan nilai numerik
-				const lastValueText = resultBox.find(".value").text(data.result);
-				resultBox.find(".numeric-indicator").text(`${data.numeric_value} mg/dL`);
-				const lastValue = parseFloat(lastValueText);
-				// Panggil fungsi untuk menampilkan tombol OK/Ulang
-				handleMeasurementStopped({ type: data.type, value: lastValue });
-			});
-
-			// LOG 5: Konfirmasi ini adalah pembaruan nilai biasa
-			console.log(`Update nilai untuk ${data.type}: ${data.value}`);
-			$(`.result-box[data-type=${data.type}] .value`).text(`${data.value} mg/dL`);
+			// Jika ini data angka biasa, tampilkan sebagai nilai real-time
+			//console.log(`Update nilai untuk ${data.type}: ${data.value}`);
+			const resultBox = $(`.result-box[data-type=${data.type}] mg/dL`);
+			//resultBox.find(".numeric-indicator").text(`${data.value} mg/dL`); // Update indikator kecil
+			resultBox.find(".measure-status").text("Menerima data...");
 		});
 
-		function handleMeasurementStopped(data) {
-			currentSessionData.results[data.type] = data.value;
-			console.log("Hasil diperbarui:", currentSessionData);
-
+		// Handler ini HANYA untuk menampilkan hasil prediksi
+		socket.on("prediction_result", function (data) {
+			//console.log("Menerima hasil prediksi:", data);
 			const resultBox = $(`.result-box[data-type=${data.type}]`);
-			const measureButton = $(`.btn-measure[data-type=${data.type}]`);
-			measureButton.text("Selesai").css("background-color", "#28a745");
 
-			resultBox.find(".action-buttons").remove();
+			// Tampilkan hasil prediksi numerik di kotak utama
+			const finalValue = parseFloat(data.value).toFixed(2);
+			resultBox.find(".value").text(`${finalValue} mg/dL`);
 
-			const buttonContainer = $(
-				'<div class="action-buttons" style="margin-top: 15px; display: flex; gap: 10px; justify-content: center;"></div>'
-			);
+			// Simpan hasil numerik untuk dikirim ke DB
+			currentSessionData.results[data.type] = parseFloat(finalValue);
 
-			const repeatButton = $('<button class="btn-ulang">Ulang</button>').on("click", function () {
-				buttonContainer.remove();
-				resultBox.find(".value").text("- mg/dL");
-
-				// Dapatkan kembali teks asli tombolnya
-				let originalText = "Ukur";
-				if (data.type === "cholesterol") originalText = "Kolesterol";
-				if (data.type === "asam_urat") originalText = "Asam Urat";
-				if (data.type === "gula_darah") originalText = "Gula Darah";
-
-				measureButton.prop("disabled", false).css("background-color", "white").text(originalText);
-
-				socket.emit("start_measurement", { type: data.type, flag: measureButton.data("flag") });
-			});
-
-			const okButton = $('<button class="btn-ok">OK</button>').on("click", function () {
-				buttonContainer.remove();
-				$("#measurementChoiceModal").css("display", "flex");
-			});
-
-			buttonContainer.append(repeatButton).append(okButton);
-			resultBox.append(buttonContainer);
-		}
-
-		// Terakhir, pastikan handler socket.on('measurement_stopped') sekarang memanggil fungsi baru ini
-		socket.on("measurement_stopped", handleMeasurementStopped);
+			// Di bawahnya nanti bisa ditambahkan hasil klasifikasi
+			// resultBox.find(".numeric-indicator").text("Klasifikasi: Normal");
+		});
 
 		// --- PERBAIKAN UTAMA DI SINI ---
 		socket.on("save_status", function (data) {
