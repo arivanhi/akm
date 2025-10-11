@@ -12,7 +12,7 @@ void TCA9548A(uint8_t bus) {
   Wire.beginTransmission(0x70);  // TCA9548A address is 0x70
   Wire.write(1 << bus);          // send byte to select bus
   Wire.endTransmission();
-  Serial.print(bus);
+  // Serial.print(bus);
 }
 
 void setup() {
@@ -48,32 +48,28 @@ float glukosa() {
 String asamUrat() {
   digitalWrite(ledMerah, HIGH);
   TCA9548A(2);
+  float violet;
+  float blue;
+  float green;
+  float yellow;
+  float orange;
+  float red;
   String data;
 
-  float violet[500];
-  float blue[500];
-  float green[500];
-  float yellow[500];
-  float orange[500];
-  float red[500];
+  sensor.takeMeasurements();
+  violet = sensor.getCalibratedViolet();
+  blue = sensor.getCalibratedBlue();
+  green = sensor.getCalibratedGreen();
+  yellow = sensor.getCalibratedYellow();
+  orange = sensor.getCalibratedOrange();
+  red = sensor.getCalibratedRed();
 
-  for (int i = 0; i < 20; i++) {
-    sensor.takeMeasurements();
-    violet[i] = sensor.getCalibratedViolet();
-    blue[i] = sensor.getCalibratedBlue();
-    green[i] = sensor.getCalibratedGreen();
-    yellow[i] = sensor.getCalibratedYellow();
-    orange[i] = sensor.getCalibratedOrange();
-    red[i] = sensor.getCalibratedRed();
-  }
-
-
-  data = arrayToString(violet, 20);
-  data += "," + arrayToString(blue, 20);
-  data += "," + arrayToString(green, 20);
-  data += "," + arrayToString(yellow, 20);
-  data += "," + arrayToString(orange, 20);
-  data += "," + arrayToString(red, 20);
+  data = String(violet);
+  data += "," + String(blue);
+  data += "," + String(green);
+  data += "," + String(yellow);
+  data += "," + String(orange);
+  data += "," + String(red);
 
   return data;
 }
@@ -81,31 +77,28 @@ String asamUrat() {
 String kolesterol() {
   digitalWrite(ledIr, HIGH);
   TCA9548A(3);
+  float violet;
+  float blue;
+  float green;
+  float yellow;
+  float orange;
+  float red;
   String data;
 
-  float violet[500];
-  float blue[500];
-  float green[500];
-  float yellow[500];
-  float orange[500];
-  float red[500];
+  sensor.takeMeasurements();
+  violet = sensor.getCalibratedViolet();
+  blue = sensor.getCalibratedBlue();
+  green = sensor.getCalibratedGreen();
+  yellow = sensor.getCalibratedYellow();
+  orange = sensor.getCalibratedOrange();
+  red = sensor.getCalibratedRed();
 
-  for (int i = 0; i < 20; i++) {
-    sensor.takeMeasurements();
-    violet[i] = sensor.getCalibratedViolet();
-    blue[i] = sensor.getCalibratedBlue();
-    green[i] = sensor.getCalibratedGreen();
-    yellow[i] = sensor.getCalibratedYellow();
-    orange[i] = sensor.getCalibratedOrange();
-    red[i] = sensor.getCalibratedRed();
-  }
-
-  data = arrayToString(violet, 20);
-  data += "," + arrayToString(blue, 20);
-  data += "," + arrayToString(green, 20);
-  data += "," + arrayToString(yellow, 20);
-  data += "," + arrayToString(orange, 20);
-  data += "," + arrayToString(red, 20);
+  data = String(violet);
+  data += "," + String(blue);
+  data += "," + String(green);
+  data += "," + String(yellow);
+  data += "," + String(orange);
+  data += "," + String(red);
 
   return data;
 }
