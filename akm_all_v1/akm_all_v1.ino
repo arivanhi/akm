@@ -1,8 +1,8 @@
 #include "AS726X.h"
 #define ledMerah 2
-#define ledIr 4
+#define ledIr 17
 #define ledGlu 16
-#define photoDioda 17
+#define photoDioda 4
 
 AS726X sensor;
 
@@ -19,7 +19,7 @@ void setup() {
   Wire.begin();
   // Mulai komunikasi serial dengan baud rate 9600, sesuaikan dengan di Python
   Serial.begin(115200);
-  analogReadResolution(8);
+  // analogReadResolution(8);
   pinMode(ledMerah, OUTPUT);
   pinMode(ledIr, OUTPUT);
   pinMode(ledGlu, OUTPUT);
@@ -38,10 +38,11 @@ void setup() {
   }
 }
 
-float glukosa() {
-  float read;
+int glukosa() {
+  int read;
   digitalWrite(ledGlu, HIGH);
   read = analogRead(photoDioda);
+  // Serial.println(read);
   return read;
 }
 
