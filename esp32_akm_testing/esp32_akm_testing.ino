@@ -2,7 +2,7 @@ int currentMeasurementType = 0;  // 0 = Idle, 1 = Kolesterol, 2 = Asam Urat, 3 =
 
 void setup() {
   // Mulai komunikasi serial dengan baud rate 9600, sesuaikan dengan di Python
-  Serial.begin(9600);
+  Serial.begin(115200);
   Serial.println("ESP32 siap. Menunggu perintah flag...");
   pinMode(13, INPUT_PULLUP);
 }
@@ -57,5 +57,5 @@ void loop() {
   }
 
   // Beri jeda 1 detik sebelum iterasi loop berikutnya
-  delay(1000);
+  delay(50);
 }
