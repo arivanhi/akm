@@ -399,7 +399,7 @@ body.auth-page {
 
 .sidebar-footer .footer-logos img {
 	max-height: 35px; /* Atur ukuran logo */
-	filter: brightness(0) invert(1); /* Ubah logo jadi putih */
+	
 	opacity: 0.8;
 }
 
