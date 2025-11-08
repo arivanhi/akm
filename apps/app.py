@@ -26,7 +26,8 @@ MQTT_BROKER_HOST = os.getenv('MQTT_BROKER_HOST', 'localhost')
 MQTT_DATA_TOPIC = "akm/data"
 MQTT_COMMAND_TOPIC = "akm/command"
 MQTT_PREDICTION_TOPIC = "akm/prediction_data"
-MQTT_RESULT_TOPIC = "akm/prediction_result" 
+MQTT_RESULT_TOPIC = "akm/prediction_result"
+MQTT_PROGRESS_TOPIC = "akm/progress" 
 
 load_modelxg_as_path = 'model/xgboost_as2_model.json'
 load_modelknn_as_path = 'model/knn_as2_predictions.npy'
@@ -80,7 +81,8 @@ def on_connect(client, userdata, flags, rc):
     client.subscribe(MQTT_DATA_TOPIC)
     client.subscribe(MQTT_PREDICTION_TOPIC)
     client.subscribe(MQTT_RESULT_TOPIC)
-    print(f"Subscribe ke topik: {MQTT_DATA_TOPIC}, {MQTT_RESULT_TOPIC} dan {MQTT_PREDICTION_TOPIC}")
+    client.subscribe(MQTT_PROGRESS_TOPIC)
+    print(f"Subscribe ke topik: {MQTT_DATA_TOPIC}, {MQTT_RESULT_TOPIC}, {MQTT_PROGRESS_TOPIC} dan {MQTT_PREDICTION_TOPIC}")
 
 # def on_message(client, userdata, msg):
 #     """Menerima data dari MQTT dan meneruskannya apa adanya ke browser."""
@@ -150,6 +152,13 @@ def on_message(client, userdata, msg):
             socketio.emit('prediction_result', result_data)
         except Exception as e:
             print(f"Gagal memproses data hasil prediksi: {e}")
+    elif msg.topic == MQTT_PROGRESS_TOPIC:
+        try:
+            progress_data = json.loads(payload)
+            # Langsung teruskan info progres ke browser
+            socketio.emit('measurement_progress', progress_data)
+        except Exception as e:
+            print(f"Gagal mem-parsing progres: {e}")
         
     if msg.topic == MQTT_DATA_TOPIC:
         parts = payload.split(':')

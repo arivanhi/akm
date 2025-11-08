@@ -314,6 +314,24 @@
 			resultBox.find(".measure-status").text("Menerima data...");
 		});
 
+		socket.on("measurement_progress", function (data) {
+			// data akan berisi: {type: "cholesterol", current: 25, target: 120}
+			console.log("Menerima progres:", data);
+			const resultBox = $(`.result-box[data-type=${data.type}]`);
+
+			// Pastikan kita punya data yang valid untuk dihitung
+			if (data.current && data.target > 0) {
+				// Hitung persentase dan bulatkan ke angka terdekat
+				const percentage = Math.round((data.current / data.target) * 100);
+
+				// Update status loading dengan persentase
+				resultBox.find(".measure-status").text(`Mengumpulkan data: ${percentage}%`);
+			} else {
+				// Fallback jika data tidak lengkap
+				resultBox.find(".measure-status").text("Mengumpulkan data...");
+			}
+		});
+
 		// Handler ini HANYA untuk menampilkan hasil prediksi
 		socket.on("prediction_result", function (data) {
 			//console.log("Menerima hasil prediksi:", data);

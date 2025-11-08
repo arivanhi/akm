@@ -43,6 +43,7 @@ int glukosa() {
   digitalWrite(ledGlu, HIGH);
   read = analogRead(photoDioda);
   // Serial.println(read);
+  delay(200);
   return read;
 }
 
@@ -95,11 +96,11 @@ String kolesterol() {
   w = sensor.getCalibratedW();
 
   data = String(r);
-  data += "," + String(s);
-  data += "," + String(t);
-  data += "," + String(u);
-  data += "," + String(v);
-  data += "," + String(w);
+  // data += "," + String(s);
+  // data += "," + String(t);
+  // data += "," + String(u);
+  // data += "," + String(v);
+  // data += "," + String(w);
 
   return data;
 }
