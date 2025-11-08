@@ -51,6 +51,19 @@ body.auth-page {
 	height: 60px;
 	object-fit: contain;
 }
+.result-box .reference-range {
+    font-size: 0.8rem; /* Ukuran kecil */
+    font-style: italic; /* Miring */
+    color: #888;       /* Warna abu-abu */
+    margin-top: -10px; /* Tarik ke atas agar lebih dekat dengan judul */
+    margin-bottom: 15px;
+    min-height: 1.2em;  /* Jaga layout agar tidak 'lompat' */
+}
+
+/* Sesuaikan margin untuk status "Mengukur..." */
+.result-box .measure-status {
+    margin-top: -10px;
+}
 
 .login-container h2 {
 	margin-bottom: 10px;
