@@ -78,28 +78,28 @@ String asamUrat() {
 String kolesterol() {
   digitalWrite(ledIr, HIGH);
   TCA9548A(3);
-  float violet;
-  float blue;
-  float green;
-  float yellow;
-  float orange;
-  float red;
+  float r;
+  float s;
+  float t;
+  float u;
+  float v;
+  float w;
   String data;
 
   sensor.takeMeasurements();
-  violet = sensor.getCalibratedViolet();
-  blue = sensor.getCalibratedBlue();
-  green = sensor.getCalibratedGreen();
-  yellow = sensor.getCalibratedYellow();
-  orange = sensor.getCalibratedOrange();
-  red = sensor.getCalibratedRed();
+  r = sensor.getCalibratedR();
+  s = sensor.getCalibratedS();
+  t = sensor.getCalibratedT();
+  u = sensor.getCalibratedU();
+  v = sensor.getCalibratedV();
+  w = sensor.getCalibratedW();
 
-  data = String(violet);
-  data += "," + String(blue);
-  data += "," + String(green);
-  data += "," + String(yellow);
-  data += "," + String(orange);
-  data += "," + String(red);
+  data = String(r);
+  data += "," + String(s);
+  data += "," + String(t);
+  data += "," + String(u);
+  data += "," + String(v);
+  data += "," + String(w);
 
   return data;
 }
