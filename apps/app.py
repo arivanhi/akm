@@ -28,10 +28,11 @@ MQTT_COMMAND_TOPIC = "akm/command"
 MQTT_PREDICTION_TOPIC = "akm/prediction_data"
 MQTT_RESULT_TOPIC = "akm/prediction_result" 
 
-load_model_as = 'model/model_asam_urat_VIS.h5'
+load_modelxg_as_path = 'model/xgboost_as2_model.json'
+load_modelknn_as_path = 'model/knn_as2_predictions.npy'
 
-load_modelxg_kol_path = 'model/xgboost_kolesterol_model.json'
-load_modelknn_kol_path = 'model/knn_kolesterol_predictions.npy'
+load_modelxg_kol_path = 'model/xgboost_kolesterol2_model.json'
+load_modelknn_kol_path = 'model/knn_kolesterol2_predictions.npy'
 
 load_modelxg_glu_path = 'model/xgboost_model.json'
 load_modelknn_glu_path = 'model/knn_predictions.npy'
@@ -39,7 +40,9 @@ load_modelknn_glu_path = 'model/knn_predictions.npy'
 label_encoder = LabelEncoder()
 print("Loading model xboost and predictions from saved files...")
 try:
-    model_as = tf.keras.models.load_model(load_model_as, compile=False)
+    xgb_model_as = xgb.XGBClassifier()
+    xgb_model_as.load_model(load_modelxg_as_path)
+    knn_predictions_as = np.load(load_modelknn_as_path)
     print("Model Asam Urat loaded successfully.")
     xgb_model_kol = xgb.XGBClassifier()
     xgb_model_kol.load_model(load_modelxg_kol_path)
@@ -111,13 +114,11 @@ def on_message(client, userdata, msg):
             hasil_akhir = 0.0
             numeric_value = round(sum(sensor_data) / len(sensor_data), 2)
             
-            if data_type == 'asam_urat' and model_as:
-                # xgb_pred = xgb_model_as.predict(data_np)
-                prediksi = model_as.predict(data_np.reshape(1, -1))
+            if data_type == 'asam_urat' and xgb_model_as:
+                xgb_pred = xgb_model_as.predict(data_np)
                 # xgb_pred_encode = label_encoder.inverse_transform(xgb_pred)
-                # knn_pred = knn_predictions_as
-                # hasil_akhir = (xgb_pred[0] + knn_pred[0]) / 2
-                hasil_akhir = prediksi[0][0]
+                knn_pred = knn_predictions_as
+                hasil_akhir = (xgb_pred[0] + knn_pred[0]) / 2
                 print(f"Prediksi Asam Urat: {hasil_akhir}")
             
             elif data_type == 'cholesterol' and xgb_model_kol:
