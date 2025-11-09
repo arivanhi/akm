@@ -1,6 +1,6 @@
 #include "AS726X.h"
-#define ledMerah 2
-#define ledIr 17
+#define ledMerah 17
+#define ledIr 2
 #define ledGlu 16
 #define photoDioda 4
 
@@ -48,6 +48,7 @@ int glukosa() {
 }
 
 String asamUrat() {
+
   digitalWrite(ledMerah, HIGH);
   TCA9548A(2);
   float violet;
@@ -77,7 +78,9 @@ String asamUrat() {
 }
 
 String kolesterol() {
+
   digitalWrite(ledIr, HIGH);
+
   TCA9548A(3);
   float r;
   float s;
