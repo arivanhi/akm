@@ -511,47 +511,153 @@ def get_patient_measurements(patient_id):
     if g.user is None:
         return jsonify({'error': 'Unauthorized'}), 401
 
+    # Ambil parameter filter dari URL (jika ada)
+    start_date = request.args.get('start_date')
+    end_date = request.args.get('end_date')
+
     conn = get_db_connection()
     cur = conn.cursor()
 
-    # Query 1: Ambil data biodata pasien
-    cur.execute(
-        "SELECT nama_lengkap, umur, jenis_kelamin, alamat, nik, no_hp FROM patients WHERE id = %s",
-        (patient_id,)
-    )
+    # Query Dasar
+    query_bio = "SELECT nama_lengkap, umur, jenis_kelamin, alamat, nik, no_hp FROM patients WHERE id = %s"
+    cur.execute(query_bio, (patient_id,))
     patient_data = cur.fetchone()
     biodata = {
-        'nama': patient_data[0],
-        'umur': patient_data[1],
-        'jenis_kelamin': patient_data[2],
-        'alamat': patient_data[3],
-        'nik': patient_data[4],
-        'no_hp': patient_data[5]
+        'nama': patient_data[0], 'umur': patient_data[1], 'jenis_kelamin': patient_data[2],
+        'alamat': patient_data[3], 'nik': patient_data[4], 'no_hp': patient_data[5]
     } if patient_data else {}
 
-    # Query 2: Ambil semua riwayat pengukuran untuk chart
-    cur.execute(
-        """
+    # Query Data Pengukuran dengan Filter Dinamis
+    query_data = """
         SELECT measured_at, cholesterol_value, uric_acid_value, blood_sugar_value
         FROM measurements
         WHERE patient_id = %s
-        ORDER BY measured_at ASC;
-        """, 
-        (patient_id,)
-    )
+    """
+    params = [patient_id]
+
+    if start_date and end_date:
+        query_data += " AND measured_at >= %s AND measured_at <= %s"
+        params.extend([start_date, end_date])
+    
+    query_data += " ORDER BY measured_at ASC;"
+
+    cur.execute(query_data, tuple(params))
     measurements = cur.fetchall()
     cur.close()
     conn.close()
 
     chart_data = {
-        'labels': [m[0].strftime('%d %b %Y %H:%M') for m in measurements],
+        'labels': [m[0].strftime('%Y-%m-%d %H:%M') for m in measurements],
         'cholesterol': [m[1] for m in measurements],
         'uric_acid': [m[2] for m in measurements],
         'blood_sugar': [m[3] for m in measurements],
     }
 
-    # Gabungkan kedua data dalam satu response JSON
     return jsonify({'biodata': biodata, 'chart_data': chart_data})
+# def get_patient_measurements(patient_id):
+#     if g.user is None:
+#         return jsonify({'error': 'Unauthorized'}), 401
+
+#     conn = get_db_connection()
+#     cur = conn.cursor()
+
+#     # Query 1: Ambil data biodata pasien
+#     cur.execute(
+#         "SELECT nama_lengkap, umur, jenis_kelamin, alamat, nik, no_hp FROM patients WHERE id = %s",
+#         (patient_id,)
+#     )
+#     patient_data = cur.fetchone()
+#     biodata = {
+#         'nama': patient_data[0],
+#         'umur': patient_data[1],
+#         'jenis_kelamin': patient_data[2],
+#         'alamat': patient_data[3],
+#         'nik': patient_data[4],
+#         'no_hp': patient_data[5]
+#     } if patient_data else {}
+
+#     # Query 2: Ambil semua riwayat pengukuran untuk chart
+#     cur.execute(
+#         """
+#         SELECT measured_at, cholesterol_value, uric_acid_value, blood_sugar_value
+#         FROM measurements
+#         WHERE patient_id = %s
+#         ORDER BY measured_at ASC;
+#         """, 
+#         (patient_id,)
+#     )
+#     measurements = cur.fetchall()
+#     cur.close()
+#     conn.close()
+
+#     chart_data = {
+#         'labels': [m[0].strftime('%d %b %Y %H:%M') for m in measurements],
+#         'cholesterol': [m[1] for m in measurements],
+#         'uric_acid': [m[2] for m in measurements],
+#         'blood_sugar': [m[3] for m in measurements],
+#     }
+
+#     # Gabungkan kedua data dalam satu response JSON
+#     return jsonify({'biodata': biodata, 'chart_data': chart_data})
+
+@app.route('/upload_patient_data/<int:patient_id>', methods=['POST'])
+def upload_patient_data(patient_id):
+    """Mengupload data pasien spesifik (bisa difilter tanggal)."""
+    if g.user is None: return jsonify({'status': 'error', 'message': 'Akses ditolak'}), 401
+    
+    # Ambil filter tanggal dari JSON body
+    data = request.json
+    start_date = data.get('start_date')
+    end_date = data.get('end_date')
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+    
+    query = """
+        SELECT p.nama_lengkap, p.nik, p.umur, p.jenis_kelamin,
+               m.measured_at, m.cholesterol_value, m.uric_acid_value, m.blood_sugar_value
+        FROM measurements m
+        JOIN patients p ON m.patient_id = p.id
+        WHERE p.id = %s
+    """
+    params = [patient_id]
+
+    if start_date and end_date:
+        query += " AND m.measured_at >= %s AND m.measured_at <= %s"
+        params.extend([start_date, end_date])
+    
+    query += " ORDER BY m.measured_at ASC"
+
+    cur.execute(query, tuple(params))
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+
+    if not rows:
+        return jsonify({'status': 'warning', 'message': 'Tidak ada data pada rentang waktu ini.'})
+
+    # Format ke JSON
+    payload = []
+    for row in rows:
+        payload.append({
+            "nama_pasien": row[0], "nik": row[1], "umur": row[2], "jenis_kelamin": row[3],
+            "tanggal_pengukuran": row[4].isoformat(),
+            "kolesterol": row[5], "asam_urat": row[6], "gula_darah": row[7]
+        })
+
+    # Kirim ke API Eksternal
+    external_api_url = os.getenv('EXTERNAL_API_URL')
+    if not external_api_url:
+        return jsonify({'status': 'error', 'message': 'URL API eksternal belum disetting di .env'}), 500
+
+    try:
+        # response = requests.post(external_api_url, json=payload, timeout=30)
+        # response.raise_for_status()
+        # Simulasi sukses jika API belum ada:
+        print(f"Mengupload {len(payload)} data ke {external_api_url}")
+        return jsonify({'status': 'success', 'message': f'Berhasil mengunggah {len(payload)} data pasien ini!'})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': f'Gagal upload: {str(e)}'}), 500
 
 @app.route('/api/patient/<int:patient_id>')
 def get_patient_detail(patient_id):

@@ -71,16 +71,29 @@
 	</div>
 
 	<div id="measurementControl" class="form-container" style="display: none">
-		<div id="patientDetails" class="patient-details-container">
-			<h3>Detail Pasien</h3>
-			<p><strong>Nama:</strong> <span id="detail_nama"></span></p>
-			<p><strong>NIK:</strong> <span id="detail_nik"></span></p>
-			<p><strong>Umur:</strong> <span id="detail_umur"></span> Tahun</p>
-			<p><strong>Jenis Kelamin:</strong> <span id="detail_jenis_kelamin"></span></p>
-			<p><strong>Alamat:</strong> <span id="detail_alamat"></span></p>
-		</div>
-		<button id="btnStartSession" class="btn-submit">Mulai Sesi Pengukuran</button>
-	</div>
+        <div id="patientDetails" class="patient-details-container">
+            <h3>Detail Pasien</h3>
+            <p><strong>Nama:</strong> <span id="detail_nama"></span></p>
+            <p><strong>NIK:</strong> <span id="detail_nik"></span></p>
+            <p><strong>Umur:</strong> <span id="detail_umur"></span> Tahun</p>
+            <p><strong>Jenis Kelamin:</strong> <span id="detail_jenis_kelamin"></span></p>
+            <p><strong>Alamat:</strong> <span id="detail_alamat"></span></p>
+        </div>
+        
+        <button id="btnStartSession" class="btn-submit">Mulai Sesi Pengukuran</button>
+
+        <div id="postMeasurementActions" style="display: none; margin-top: 20px; gap: 15px; justify-content: flex-start;">
+            <button id="btnPrint" class="btn-action btn-print">
+                <i class="fas fa-print"></i> Print Data
+            </button>
+            <button id="btnEmail" class="btn-action btn-email">
+                <i class="fas fa-envelope"></i> Kirim Email
+            </button>
+            <button id="btnFinalFinish" class="btn-action btn-finish-final">
+                Akhiri <i class="fas fa-check"></i>
+            </button>
+        </div>
+    </div>
 
 	<div class="results-grid">
 		<div class="result-box" data-type="asam_urat">
@@ -103,11 +116,53 @@
 		</div>
 	</div>
 </div>
-
+<div id="loadingOverlay" class="loading-overlay" style="display: none;">
+    <div class="loading-content">
+        <div class="spinner"></div>
+        <h2 id="loadingTitle">Sedang Mengukur...</h2>
+        <p id="loadingText">Mengumpulkan data: 0%</p>
+    </div>
+</div>
 {% endblock %} {% block scripts %}
 <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
 <script>
 	$(document).ready(function () {
+
+		const REFERENCE_RANGES = {
+        'laki-laki': {
+            'asam_urat': 'Normal: 3.4 - 7.0 mg/dL',
+            'cholesterol': 'Normal: < 200 mg/dL',
+            'gula_darah': 'Normal: 70 - 140 mg/dL'
+        },
+        'perempuan': {
+            'asam_urat': 'Normal: 2.4 - 6.0 mg/dL', // Beda untuk wanita
+            'cholesterol': 'Normal: < 200 mg/dL',
+            'gula_darah': 'Normal: 70 - 140 mg/dL'
+        }
+    };
+
+	function updateReferenceRanges(gender) {
+			console.log("Gender mentah dari database:", gender); // Debugging
+
+			// Normalisasi: Pastikan string, hapus spasi, ubah ke huruf kecil
+			let safeGender = 'laki-laki'; // Default
+			
+			if (gender && typeof gender === 'string') {
+				const cleanGender = gender.trim().toLowerCase();
+				if (cleanGender === 'perempuan' || cleanGender === 'wanita') {
+					safeGender = 'perempuan';
+				}
+			}
+
+			const ranges = REFERENCE_RANGES[safeGender];
+
+			// Update teks di setiap kartu
+			$(`.result-box[data-type="asam_urat"] .reference-range`).text(ranges.asam_urat);
+			$(`.result-box[data-type="cholesterol"] .reference-range`).text(ranges.cholesterol);
+			$(`.result-box[data-type="gula_darah"] .reference-range`).text(ranges.gula_darah);
+			
+			console.log(`Referensi diupdate untuk gender: ${safeGender}`);
+		}
 		// --- FUNGSI NOTIFIKASI ---
 		function showNotification(message, category) {
 			const flashMessage = $("<div></div>").addClass(`flash-message flash-${category}`).text(message);
@@ -120,6 +175,7 @@
 		}
 
 		// --- FUNGSI UNTUK MERESET SELURUH HALAMAN ---
+		/*
 		function resetMeasurementPage() {
 			// 1. Sembunyikan semua bagian konten
 			$("#measurementContent").hide();
@@ -139,6 +195,29 @@
 			$(".result-box .btn-ok").remove();
 
 			// 5. Tampilkan kembali modal pilihan pasien awal
+			$("#patientChoiceModal").css("display", "flex");
+		}
+			*/
+			function resetMeasurementPage() {
+			$('#measurementContent').hide();
+			$('#newPatientSection').hide();
+			$('#existingPatientSection').hide();
+			$('#measurementControl').hide();
+			
+			// Kembalikan kondisi tombol
+			$('#btnStartSession').show(); // Tampilkan tombol mulai
+			$('#postMeasurementActions').css('display', 'none'); // Sembunyikan tombol aksi
+			
+			currentSessionData = { patient_id: null, results: {} };
+			$('#newPatientForm')[0].reset();
+			$('#search_patient_name').val("");
+			
+			$(".result-box .value").text("-");
+			$(".result-box .numeric-indicator").text("-- mg/dL");
+			$(".result-box .measure-status").text("");
+			$('.result-box .action-buttons').remove();
+			$(".classification-status").text("-").removeClass('status-normal status-tinggi status-rendah');
+			
 			$("#patientChoiceModal").css("display", "flex");
 		}
 		function showActionButtons(type) {
@@ -182,6 +261,7 @@
 		socket.on("connect", () => console.log(""));
 		resetMeasurementPage();
 		// --- FUNGSI BANTUAN ---
+		
 		function showPatientDataAndControls(patient) {
 			currentSessionData.patient_id = patient.id;
 			$("#detail_nama").text(patient.nama);
@@ -189,6 +269,8 @@
 			$("#detail_alamat").text(patient.alamat);
 			$("#detail_umur").text(patient.umur);
 			$("#detail_jenis_kelamin").text(patient.jenis_kelamin);
+		
+			updateReferenceRanges(patient.jenis_kelamin);
 			$("#measurementControl").show();
 		}
 
@@ -270,6 +352,7 @@
 				.css("background-color", "white");
 		});
 
+		/*
 		$("#btnFinishSession").on("click", function () {
 			$("#measurementChoiceModal").hide();
 			if (Object.keys(currentSessionData.results).length > 0 && currentSessionData.patient_id) {
@@ -281,8 +364,23 @@
 				resetMeasurementPage();
 			}
 		});
+		*/
+
+		$("#btnFinishSession").on("click", function () {
+			$("#measurementChoiceModal").hide();
+			
+			if (Object.keys(currentSessionData.results).length > 0 && currentSessionData.patient_id) {
+				// Kirim data untuk disimpan
+				socket.emit("save_session_data", currentSessionData);
+			} else {
+				// Jika tidak ada data, langsung reset (atau bisa tampilkan alert)
+				showNotification("Tidak ada data baru. Sesi dibatalkan.", "info");
+				resetMeasurementPage();
+			}
+		});
 
 		// --- ALUR 5: MENERIMA DATA DARI SERVER (WEBSOCKET) ---
+		/*
 		$(".btn-measure").on("click", function () {
 			const type = $(this).data("type");
 			const flag = $(this).data("flag");
@@ -331,30 +429,118 @@
 				resultBox.find(".measure-status").text("Mengumpulkan data...");
 			}
 		});
+		*/
+		$(".btn-measure").on("click", function () {
+        const type = $(this).data("type");
+        const flag = $(this).data("flag");
+        const label = $(this).text(); // Ambil teks tombol (misal: "Kolesterol")
 
+        const box = $(`.result-box[data-type=${type}]`);
+        box.find('.action-buttons').remove();
+        box.find('.value, .classification-status').text('-');
+        box.find('.numeric-indicator').text('-- mg/dL');
+        box.find('.classification-status').removeClass('status-normal status-tinggi status-rendah');
+
+        // TAMPILKAN LOADING OVERLAY
+        $("#loadingTitle").text(`Mengukur ${label}...`);
+        $("#loadingText").text("Menunggu data awal...");
+        $("#loadingOverlay").fadeIn();
+
+        $(this).prop("disabled", true).text('Mengukur...');
+        socket.emit("start_measurement", { type: type, flag: flag });
+        $("#measurementChoiceModal").hide();
+    });
+
+    socket.on("measurement_update", function (data) {
+        // Update angka kecil di kartu (opsional, bisa dihapus jika ingin fokus ke overlay saja)
+        $(`.result-box[data-type=${data.type}] .numeric-indicator`).text(`${data.value} mg/dL`);
+    });
+    
+    socket.on("measurement_progress", function (data) {
+        // UPDATE TEKS DI LOADING OVERLAY
+        if (data.current && data.target > 0) {
+            const pct = Math.round((data.current / data.target) * 100);
+            $("#loadingText").text(`Mengumpulkan data: ${pct}%`);
+            
+            if (pct >= 100) {
+                 $("#loadingText").text("Memproses prediksi...");
+            }
+        }
+    });
 		// Handler ini HANYA untuk menampilkan hasil prediksi
-		socket.on("prediction_result", function (data) {
-			//console.log("Menerima hasil prediksi:", data);
-			const resultBox = $(`.result-box[data-type=${data.type}]`);
+		// --- HANDLER UNTUK MENERIMA HASIL PREDIKSI ---
+        socket.on("prediction_result", function (data) {
+            // 1. HILANGKAN LOADING OVERLAY (Ini perbaikannya)
+            $("#loadingOverlay").fadeOut();
 
-			// Tampilkan hasil prediksi numerik di kotak utama
-			const finalValue = parseFloat(data.value).toFixed(2);
-			resultBox.find(".value").text(`${finalValue} mg/dL`);
+            const resultBox = $(`.result-box[data-type=${data.type}]`);
 
-			// Simpan hasil numerik untuk dikirim ke DB
-			currentSessionData.results[data.type] = parseFloat(finalValue);
+            // 2. Reset status teks di card (opsional, agar bersih)
+            resultBox.find(".measure-status").text('');
 
-			// Di bawahnya nanti bisa ditambahkan hasil klasifikasi
-			// resultBox.find(".numeric-indicator").text("Klasifikasi: Normal");
-		});
+            // 3. Tampilkan hasil prediksi numerik
+            const finalValue = parseFloat(data.value).toFixed(2);
+            resultBox.find(".value").text(`${finalValue} mg/dL`);
+            
+            // Update juga indikator kecil di bawah (jika masih digunakan)
+            //resultBox.find(".numeric-indicator").text(`${finalValue} mg/dL`);
+
+            // 4. Simpan hasil numerik untuk dikirim ke DB
+            currentSessionData.results[data.type] = parseFloat(finalValue);
+            
+            // 5. Tampilkan tombol OK/Ulang
+            showActionButtons(data.type);
+        });
 
 		// --- PERBAIKAN UTAMA DI SINI ---
+		/*
 		socket.on("save_status", function (data) {
 			// Tampilkan notifikasi dari server
 			showNotification(data.message, data.status);
 			// Reset seluruh halaman SETELAH menerima konfirmasi
 			resetMeasurementPage();
 		});
+		*/
+		socket.on("save_status", function (data) {
+        showNotification(data.message, data.status);
+        
+        if (data.status === 'success') {
+            // JANGAN RESET HALAMAN DISINI.
+            // Tapi ubah UI ke mode "Pasca Pengukuran"
+            
+            // 1. Sembunyikan tombol Mulai Sesi
+            $('#btnStartSession').hide();
+            
+            // 2. Tampilkan tombol Print/Email/Selesai dengan Flexbox
+            $('#postMeasurementActions').css('display', 'flex');
+            
+            // Opsional: Scroll ke atas agar terlihat
+            $('html, body').animate({ scrollTop: 0 }, 'fast');
+        } else {
+            // Jika gagal simpan, biarkan user mencoba lagi atau reset manual
+        }
+    });
+
+    // --- HANDLER UNTUK TOMBOL-TOMBOL BARU ---
+    
+    // 1. Tombol Print
+    $('#btnPrint').on('click', function() {
+        window.print();
+    });
+
+    // 2. Tombol Email (Placeholder)
+    $('#btnEmail').on('click', function() {
+        if(confirm("Kirim hasil pengukuran ke email pasien? (Fitur ini memerlukan konfigurasi server email)")) {
+            // Di sini nanti Anda bisa memanggil AJAX ke endpoint Flask untuk kirim email
+            alert("Fitur kirim email akan segera hadir!");
+        }
+    });
+
+    // 3. Tombol Selesai (Final)
+    $('#btnFinalFinish').on('click', function() {
+        // Ini yang akan me-reset halaman kembali ke pemilihan pasien
+        resetMeasurementPage();
+    });
 	});
 </script>
 {% endblock %}

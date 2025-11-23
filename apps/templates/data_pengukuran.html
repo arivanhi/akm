@@ -87,31 +87,42 @@
 	</div>
 </div>
 
-<div id="patientDetailView" style="display: none">
-	<div class="page-header">
-		<button id="backToListBtn" class="btn-back"><i class="fas fa-arrow-left"></i> Kembali ke Daftar</button>
-		<h1 id="detailPatientName" class="page-title"></h1>
-	</div>
-	<div id="biodataContainer" class="form-container" style="margin-bottom: 25px">
-		<h3>Biodata Pasien</h3>
-		<div class="form-row">
-			<div class="form-group">
-				<p><strong>Nama Lengkap:</strong> <span id="bio_nama"></span></p>
-				<p><strong>NIK:</strong> <span id="bio_nik"></span></p>
-			</div>
-			<div class="form-group">
-				<p><strong>Umur:</strong> <span id="bio_umur"></span> Tahun</p>
-				<p><strong>Jenis Kelamin:</strong> <span id="bio_jenis_kelamin"></span></p>
-			</div>
-			<div class="form-group">
-				<p><strong>Alamat:</strong> <span id="bio_alamat"></span></p>
-				<p><strong>No. HP:</strong> <span id="bio_no_hp"></span></p>
-			</div>
-		</div>
-	</div>
-	<div class="chart-container">
-		<canvas id="measurementChart"></canvas>
-	</div>
+<div id="patientDetailView" style="display: none;">
+    <div class="page-header">
+        <button id="backToListBtn" class="btn-back"><i class="fas fa-arrow-left"></i> Kembali</button>
+        <h1 class="page-title">Detail Riwayat</h1>
+        <button id="btnUploadCurrentPatient" class="btn-action btn-print" style="background-color: #28a745;">
+            <i class="fas fa-cloud-upload-alt"></i> Upload Data Ini
+        </button>
+    </div>
+
+    <div id="biodataContainer" class="form-container" style="margin-bottom: 25px;">
+        <h3>Biodata Pasien</h3>
+        <div class="form-row">
+            <div class="form-group"><p><strong>Nama:</strong> <span id="bio_nama"></span></p></div>
+            <div class="form-group"><p><strong>NIK:</strong> <span id="bio_nik"></span></p></div>
+            <div class="form-group"><p><strong>Umur:</strong> <span id="bio_umur"></span></p></div>
+            <div class="form-group"><p><strong>Gender:</strong> <span id="bio_jenis_kelamin"></span></p></div>
+            <div class="form-group"><p><strong>Alamat:</strong> <span id="bio_alamat"></span></p></div>
+        </div>
+    </div>
+
+    <div class="filter-toolbar form-container" style="margin-bottom: 20px; padding: 15px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
+        <span style="font-weight: 600;">Filter Waktu:</span>
+        <button class="btn-filter" data-range="today">Hari Ini</button>
+        <button class="btn-filter" data-range="week">1 Minggu</button>
+        <button class="btn-filter" data-range="month">1 Bulan</button>
+        <div style="border-left: 1px solid #ccc; height: 30px; margin: 0 10px;"></div>
+        <input type="date" id="startDateFilter" class="date-input">
+        <span>s/d</span>
+        <input type="date" id="endDateFilter" class="date-input">
+        <button id="btnApplyFilter" class="btn-filter btn-primary">Terapkan</button>
+        <button id="btnResetFilter" class="btn-filter btn-secondary">Reset (Semua)</button>
+    </div>
+    
+    <div class="chart-container">
+        <canvas id="measurementChart"></canvas>
+    </div>
 </div>
 
 {% endblock %} {% block scripts %}
@@ -122,78 +133,138 @@
 		const detailView = $("#patientDetailView");
 		const detailPatientName = $("#detailPatientName");
 		let measurementChart = null; // Variabel untuk menyimpan objek chart
+		let currentPatientId = null;
 
+		// --- FUNGSI LOAD CHART DENGAN FILTER ---
+    function loadPatientData(patientId, startDate = null, endDate = null) {
+        currentPatientId = patientId;
+        
+        let url = `/api/patient_measurements/${patientId}`;
+        // Tambahkan query params jika ada filter tanggal
+        if (startDate && endDate) {
+            url += `?start_date=${startDate}&end_date=${endDate}`;
+        }
+
+        $.getJSON(url, function(data) {
+            // Isi Biodata (sama seperti sebelumnya)
+            const bio = data.biodata;
+            $('#bio_nama').text(bio.nama);
+            $('#bio_nik').text(bio.nik);
+            $('#bio_umur').text(bio.umur);
+            $('#bio_jenis_kelamin').text(bio.jenis_kelamin);
+            $('#bio_alamat').text(bio.alamat);
+
+            // Render Chart
+            if (measurementChart) measurementChart.destroy();
+            const ctx = document.getElementById('measurementChart').getContext('2d');
+            measurementChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: data.chart_data.labels,
+                    datasets: [
+                        { label: 'Kolesterol', data: data.chart_data.cholesterol, borderColor: '#3498db', backgroundColor: 'rgba(52, 152, 219, 0.2)', tension: 0.1 },
+                        { label: 'Asam Urat', data: data.chart_data.uric_acid, borderColor: '#e67e22', backgroundColor: 'rgba(230, 126, 34, 0.2)', tension: 0.1 },
+                        { label: 'Gula Darah', data: data.chart_data.blood_sugar, borderColor: '#2ecc71', backgroundColor: 'rgba(46, 204, 113, 0.2)', tension: 0.1 }
+                    ]
+                },
+                options: { responsive: true, plugins: { title: { display: true, text: 'Grafik Riwayat Kesehatan' } } }
+            });
+        });
+    }
 		// Saat baris pasien diklik
-		$(".patient-row").on("click", function (e) {
-			// Jangan picu jika yang diklik adalah checkbox atau tombol action
-			if ($(e.target).is("input, a")) {
-				return;
-			}
+		$('.patient-row').on('click', function(e) {
+        if ($(e.target).is('input, a')) return;
+        const pid = $(this).data('patient-id');
+        listView.hide();
+        detailView.show();
+        // Reset input tanggal saat buka pasien baru
+        $('#startDateFilter').val('');
+        $('#endDateFilter').val('');
+        loadPatientData(pid); // Load semua data awal
+    });
 
-			const patientId = $(this).data("patient-id");
-			const patientName = $(this).data("patient-name");
+    // --- LOGIKA TOMBOL FILTER ---
+    $('.btn-filter[data-range]').on('click', function() {
+        const range = $(this).data('range');
+        const end = new Date();
+        let start = new Date();
 
-			// Tampilkan nama pasien di judul
-			//detailPatientName.text(`Riwayat Pengukuran: ${patientName}`);
+        // Set waktu ke akhir hari ini agar mencakup data hari ini
+        end.setHours(23, 59, 59, 999); 
 
-			// Ambil data dari API
-			$.getJSON(`/api/patient_measurements/${patientId}`, function (data) {
-				// Ganti tampilan
-				listView.hide();
-				detailView.show();
-				const biodata = data.biodata;
-				$("#bio_nama").text(biodata.nama);
-				$("#bio_nik").text(biodata.nik);
-				$("#bio_umur").text(biodata.umur);
-				$("#bio_jenis_kelamin").text(biodata.jenis_kelamin);
-				$("#bio_alamat").text(biodata.alamat);
-				$("#bio_no_hp").text(biodata.no_hp);
-				// Hancurkan chart lama jika ada
-				if (measurementChart) {
-					measurementChart.destroy();
-				}
+        if (range === 'today') {
+            start.setHours(0, 0, 0, 0);
+        } else if (range === 'week') {
+            start.setDate(end.getDate() - 7);
+        } else if (range === 'month') {
+            start.setMonth(end.getMonth() - 1);
+        }
 
-				const chart_data = data.chart_data;
-				// Buat chart baru
-				const ctx = document.getElementById("measurementChart").getContext("2d");
-				measurementChart = new Chart(ctx, {
-					type: "line",
-					data: {
-						labels: chart_data.labels,
-						datasets: [
-							{
-								label: "Kolesterol",
-								data: chart_data.cholesterol,
-								borderColor: "rgb(255, 99, 132)",
-								backgroundColor: "rgba(255, 99, 132, 0.5)",
-								tension: 0.1,
-							},
-							{
-								label: "Asam Urat",
-								data: chart_data.uric_acid,
-								borderColor: "rgb(54, 162, 235)",
-								backgroundColor: "rgba(54, 162, 235, 0.5)",
-								tension: 0.1,
-							},
-							{
-								label: "Gula Darah",
-								data: chart_data.blood_sugar,
-								borderColor: "rgb(75, 192, 192)",
-								backgroundColor: "rgba(75, 192, 192, 0.5)",
-								tension: 0.1,
-							},
-						],
-					},
-					options: {
-						responsive: true,
-						plugins: {
-							legend: { position: "top" },
-							title: { display: true, text: "Grafik Riwayat Kesehatan" },
-						},
-					},
-				});
-			});
-		});
+        // Format ke YYYY-MM-DD HH:MM:SS untuk backend
+        const fmt = (d) => d.toISOString().slice(0, 19).replace('T', ' ');
+        
+        // Update tampilan input date
+        $('#startDateFilter').val(start.toISOString().slice(0, 10));
+        $('#endDateFilter').val(end.toISOString().slice(0, 10));
+
+        loadPatientData(currentPatientId, fmt(start), fmt(end));
+    });
+
+    $('#btnApplyFilter').on('click', function() {
+        let s = $('#startDateFilter').val();
+        let e = $('#endDateFilter').val();
+        if(s && e) {
+            // Tambahkan jam agar filter akurat (awal hari s/d akhir hari)
+            loadPatientData(currentPatientId, s + " 00:00:00", e + " 23:59:59");
+        } else {
+            alert("Pilih tanggal mulai dan selesai.");
+        }
+    });
+
+    $('#btnResetFilter').on('click', function() {
+        $('#startDateFilter').val('');
+        $('#endDateFilter').val('');
+        loadPatientData(currentPatientId); // Load tanpa filter (semua)
+    });
+
+    // --- LOGIKA UPLOAD DATA PASIEN INI ---
+    $('#btnUploadCurrentPatient').on('click', function() {
+        const btn = $(this);
+        const originalText = btn.html();
+        
+        // Ambil filter tanggal saat ini (jika ada)
+        let s = $('#startDateFilter').val();
+        let e = $('#endDateFilter').val();
+        let payload = {};
+        
+        if (s && e) {
+            payload = { start_date: s + " 00:00:00", end_date: e + " 23:59:59" };
+        }
+
+        if(confirm("Upload data yang sedang ditampilkan ke server?")) {
+            btn.prop('disabled', true).text('Mengirim...');
+            
+            $.ajax({
+                url: `/upload_patient_data/${currentPatientId}`,
+                method: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify(payload),
+                success: function(res) {
+                    alert(res.message);
+                },
+                error: function(err) {
+                    alert("Gagal upload: " + (err.responseJSON ? err.responseJSON.message : err.statusText));
+                },
+                complete: function() {
+                    btn.prop('disabled', false).html(originalText);
+                }
+            });
+        }
+    });
+
+    $('#backToListBtn').on('click', function() { detailView.hide(); listView.show(); });
+
+	
 		const editModal = $("#editPatientModal");
 
 		// 1. Saat tombol "Edit" di salah satu baris diklik
