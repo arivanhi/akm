@@ -206,6 +206,7 @@ def on_connect(client, userdata, flags, rc):
 
 def on_message(client, userdata, msg):
     payload_str = msg.payload.decode('utf-8')
+    print(f"Data diterima dari MQTT topik '{msg.topic}': {payload_str}")
 
     # --- KASUS 1: TERIMA DATA ARRAY UNTUK PREDIKSI ---
     if msg.topic == MQTT_PREDICTION_TOPIC:
