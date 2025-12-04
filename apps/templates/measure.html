@@ -242,8 +242,11 @@
 					.replace(/_/g, " ")
 					.replace(/\b\w/g, (l) => l.toUpperCase());
 				measureButton.prop("disabled", false).css("background-color", "white").text(originalText);
+				$("#loadingTitle").text(`Mengukur ${originalText}...`);
+            	$("#loadingText").text("Menunggu data awal...");
+            	$("#loadingOverlay").fadeIn();
 
-				socket.emit("start_measurement", { type: type, flag: measureButton.data("flag") });
+				socket.emit("start_measurement", { type: type, flag: measureButton.data("flag"), patient_id: currentSessionData.patient_id, patient_name: currentSessionData.patient_name });
 			});
 
 			const okButton = $('<button class="btn-ok">OK</button>').on("click", function () {
@@ -264,6 +267,7 @@
 		
 		function showPatientDataAndControls(patient) {
 			currentSessionData.patient_id = patient.id;
+			currentSessionData.patient_name = patient.nama;
 			$("#detail_nama").text(patient.nama);
 			$("#detail_nik").text(patient.nik);
 			$("#detail_alamat").text(patient.alamat);
@@ -447,7 +451,7 @@
         $("#loadingOverlay").fadeIn();
 
         $(this).prop("disabled", true).text('Mengukur...');
-        socket.emit("start_measurement", { type: type, flag: flag });
+        socket.emit("start_measurement", { type: type, flag: flag, patient_id: currentSessionData.patient_id, patient_name: currentSessionData.patient_name });
         $("#measurementChoiceModal").hide();
     });
 

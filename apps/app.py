@@ -10,7 +10,6 @@ from flask_socketio import SocketIO, emit
 from dotenv import load_dotenv
 import paho.mqtt.client as mqtt
 import requests
-import tensorflow as tf
 import xgboost as xgb
 import numpy as np
 from sklearn.preprocessing import LabelEncoder
@@ -46,7 +45,8 @@ def load_logged_in_user():
         conn.close()
 app.secret_key = os.getenv('SECRET_KEY', os.urandom(24).hex())
 socketio = SocketIO(app, async_mode='threading')
-
+active_patient_id = None # Variabel global untuk melacak pasien aktif
+active_patient_name = None
 print("Memuat model Machine Learning...")
 models_xgb = {}
 models_knn = {}
@@ -261,6 +261,24 @@ def on_message(client, userdata, msg):
                 # 'numeric_value': float(numeric_value)
             }
             client.publish(MQTT_RESULT_TOPIC, json.dumps(result_payload))
+            if active_patient_id:
+                try:
+                    # Kita buka koneksi sebentar khusus untuk simpan ini
+                    conn_raw = get_db_connection()
+                    cur_raw = conn_raw.cursor()
+
+                    # Simpan array sebagai JSON
+                    cur_raw.execute("""
+                        INSERT INTO raw_sensor_data (patient_id, patient_name, measurement_type, raw_data, prediction_result)
+                        VALUES (%s, %s, %s, %s, %s)
+                    """, (active_patient_id, active_patient_name, data_type, json.dumps(sensor_data), float(hasil_akhir)))
+
+                    conn_raw.commit()
+                    cur_raw.close()
+                    conn_raw.close()
+                    print(f"Data mentah {data_type} untuk Pasien {active_patient_id} berhasil disimpan.")
+                except Exception as db_err:
+                    print(f"Gagal menyimpan data mentah: {db_err}")
 
         except Exception as e:
             print(f"Gagal memproses data prediksi: {e}")
@@ -550,7 +568,11 @@ def handle_connect():
 @socketio.on('start_measurement')
 def handle_start_measurement(data):
     """Menerima flag dari web dan mengirimkannya ke Node-RED via MQTT."""
+    global active_patient_id, active_patient_name
     flag = data.get('flag')
+    active_patient_id = data.get('patient_id')
+    active_patient_name = data.get('patient_name')
+    print(f"Memulai pengukuran untuk: {active_patient_name} Pasien ID: {active_patient_id}, Flag: {flag}")
     print(f"Mengirim flag '{flag}' ke topik {MQTT_COMMAND_TOPIC}")
     mqtt_client.publish(MQTT_COMMAND_TOPIC, str(flag))
     
