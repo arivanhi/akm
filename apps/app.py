@@ -16,6 +16,7 @@ import numpy as np
 from sklearn.preprocessing import LabelEncoder
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.metrics import confusion_matrix, accuracy_score
+import joblib
 
 
 
@@ -29,32 +30,6 @@ MQTT_PREDICTION_TOPIC = "akm/prediction_data"
 MQTT_RESULT_TOPIC = "akm/prediction_result"
 MQTT_PROGRESS_TOPIC = "akm/progress" 
 
-load_modelxg_as_path = 'model/xgboost_as2_model.json'
-load_modelknn_as_path = 'model/knn_as2_predictions.npy'
-
-load_modelxg_kol_path = 'model/xgboost_kolesterol2_model.json'
-load_modelknn_kol_path = 'model/knn_kolesterol2_predictions.npy'
-
-load_modelxg_glu_path = 'model/xgboost_model.json'
-load_modelknn_glu_path = 'model/knn_predictions.npy'
-
-label_encoder = LabelEncoder()
-print("Loading model xboost and predictions from saved files...")
-try:
-    xgb_model_as = xgb.XGBClassifier()
-    xgb_model_as.load_model(load_modelxg_as_path)
-    knn_predictions_as = np.load(load_modelknn_as_path)
-    print("Model Asam Urat loaded successfully.")
-    xgb_model_kol = xgb.XGBClassifier()
-    xgb_model_kol.load_model(load_modelxg_kol_path)
-    knn_predictions_kol = np.load(load_modelknn_kol_path)
-    print("Model Kolesterol loaded successfully.")
-    xgb_model_glu = xgb.XGBClassifier()
-    xgb_model_glu.load_model(load_modelxg_glu_path)
-    knn_predictions_glu = np.load(load_modelknn_glu_path)
-    print("Model Gula Darah loaded successfully.")
-except Exception as e:
-    print(f"Error loading models: {e}")
 # --- Konfigurasi Aplikasi Flask ---
 app = Flask(__name__)
 @app.before_request
@@ -72,7 +47,66 @@ def load_logged_in_user():
 app.secret_key = os.getenv('SECRET_KEY', os.urandom(24).hex())
 socketio = SocketIO(app, async_mode='threading')
 
-# load model
+print("Memuat model Machine Learning...")
+models_xgb = {}
+models_knn = {}
+
+try:
+    # --- 1. ASAM URAT (120 Fitur) ---
+    models_xgb['asam_urat'] = xgb.XGBRegressor()
+    models_xgb['asam_urat'].load_model('model/xgboost_asam_urat_regressor.json')
+    models_knn['asam_urat'] = joblib.load('model/knn_asam_urat_regressor.pkl')
+    print("-> Model Asam Urat dimuat.")
+
+    # --- 2. KOLESTEROL (20 Fitur) ---
+    models_xgb['cholesterol'] = xgb.XGBRegressor()
+    models_xgb['cholesterol'].load_model('model/xgboost_kolesterol_regressor.json')
+    models_knn['cholesterol'] = joblib.load('model/knn_kolesterol_regressor.pkl')
+    print("-> Model Kolesterol dimuat.")
+
+    # --- 3. GULA DARAH (250 Fitur) ---
+    models_xgb['gula_darah'] = xgb.XGBRegressor()
+    models_xgb['gula_darah'].load_model('model/xgboost_glukosa_regressor.json')
+    models_knn['gula_darah'] = joblib.load('model/knn_glukosa_regressor.pkl')
+    print("-> Model Gula Darah dimuat.")
+
+except Exception as e:
+    print(f"!!! ERROR memuat model: {e}")
+    print("Pastikan Anda sudah menjalankan script 'train_..._regression.py' untuk semua tipe.")
+
+# =================================================================
+
+# --- FUNGSI BANTUAN: PREPROCESSING DATA ---
+def preprocess_sensor_data(data_list, target_length, needs_conversion=False):
+    """
+    Mengubah list mentah menjadi numpy array siap prediksi:
+    1. Konversi 12-bit ke 8-bit (jika perlu)
+    2. Padding/Truncating ke target_length
+    3. Reshape ke (1, target_length)
+    """
+    # 1. Konversi ke Numpy Array
+    data_np = np.array(data_list)
+    
+    # 2. Konversi 12-bit ke 8-bit (Khusus Glukosa)
+    if needs_conversion:
+        # Rumus: (nilai / 4095) * 255
+        data_np = (data_np / 4095.0) * 255.0
+    
+    # Bulatkan ke integer
+    data_np = np.round(data_np).astype(int)
+
+    # 3. Sesuaikan Panjang Data (Padding/Cutting)
+    current_len = len(data_np)
+    if current_len < target_length:
+        # Kurang: Tambahkan 0 di belakang
+        padding = np.zeros(target_length - current_len, dtype=int)
+        data_np = np.concatenate((data_np, padding))
+    elif current_len > target_length:
+        # Lebih: Potong data
+        data_np = data_np[:target_length]
+
+    # 4. Reshape untuk input model (1 baris, N kolom)
+    return data_np.reshape(1, -1)
 
 # --- Fungsi-fungsi Bantuan & Middleware (Tidak Berubah) ---
 # --- Logika MQTT Client ---
@@ -98,77 +132,169 @@ def on_connect(client, userdata, flags, rc):
 #             nilai = nilai_str # Ini akan menjadi "STOP"
 #         socketio.emit('measurement_update', {'type': tipe, 'value': nilai})
 
-def on_message(client, userdata, msg):
-    """Menerima data dari MQTT, lakukan prediksi, dan kirim hasil ke browser."""
-    payload = msg.payload.decode('utf-8')
+# def on_message(client, userdata, msg):
+#     """Menerima data dari MQTT, lakukan prediksi, dan kirim hasil ke browser."""
+#     payload = msg.payload.decode('utf-8')
     
+#     if msg.topic == MQTT_PREDICTION_TOPIC:
+#         print(f"Data diterima dari MQTT topik '{msg.topic}': {payload}")
+#         print("Menerima data prediksi...")
+#         try:
+#             sensor_package = json.loads(payload)
+#             data_type = sensor_package.get('type')
+#             sensor_data = sensor_package.get('data')
+            
+#             if not sensor_data or not data_type:
+#                 raise ValueError("Data atau tipe tidak lengkap.")
+#             data_np = np.array([sensor_data])
+#             hasil_akhir = 0.0
+#             numeric_value = round(sum(sensor_data) / len(sensor_data), 2)
+            
+#             if data_type == 'asam_urat' and xgb_model_as:
+#                 xgb_pred = xgb_model_as.predict(data_np)
+#                 # xgb_pred_encode = label_encoder.inverse_transform(xgb_pred)
+#                 knn_pred = knn_predictions_as
+#                 hasil_akhir = (xgb_pred[0] + knn_pred[0]) / 2
+#                 print(f"Prediksi Asam Urat: {hasil_akhir}")
+            
+#             elif data_type == 'cholesterol' and xgb_model_kol:
+#                 xgb_pred = xgb_model_kol.predict(data_np)
+#                 # xgb_pred_encode = label_encoder.inverse_transform(xgb_pred)
+#                 knn_pred = knn_predictions_kol
+#                 hasil_akhir = (xgb_pred[0] + knn_pred[0]) / 2
+#                 print(f"Prediksi Kolesterol: {hasil_akhir}")
+            
+#             elif data_type == 'gula_darah' and xgb_model_glu:
+#                 xgb_pred = xgb_model_glu.predict(data_np)
+#                 # xgb_pred_encode = label_encoder.inverse_transform(xgb_pred)
+#                 knn_pred = knn_predictions_glu
+#                 hasil_akhir = (xgb_pred[0] + knn_pred[0]) / 2
+#                 print(f"Prediksi Gula Darah: {hasil_akhir}")
+                
+#             result_payload = {
+#                 'type': data_type,
+#                 'value': float(hasil_akhir),
+#                 # 'numeric_value': numeric_value
+#             }
+#             client.publish(MQTT_RESULT_TOPIC, json.dumps(result_payload))
+#         except Exception as e:
+#             print(f"Gagal memproses data prediksi: {e}")
+#     elif msg.topic == MQTT_RESULT_TOPIC:
+#         print(f"Data hasil prediksi diterima dari MQTT topik '{msg.topic}': {payload}")
+#         try:
+#             result_data = json.loads(payload)
+#             socketio.emit('prediction_result', result_data)
+#         except Exception as e:
+#             print(f"Gagal memproses data hasil prediksi: {e}")
+#     elif msg.topic == MQTT_PROGRESS_TOPIC:
+#         try:
+#             progress_data = json.loads(payload)
+#             # Langsung teruskan info progres ke browser
+#             socketio.emit('measurement_progress', progress_data)
+#         except Exception as e:
+#             print(f"Gagal mem-parsing progres: {e}")
+        
+#     if msg.topic == MQTT_DATA_TOPIC:
+#         parts = payload.split(':')
+#         if len(parts) == 2:
+#             tipe, nilai_str = parts[0].strip(), parts[1].strip()
+#             try:
+#                 nilai = float(nilai_str)
+#             except ValueError:
+#                 nilai = nilai_str # Ini akan menjadi "STOP"
+#             socketio.emit('measurement_update', {'type': tipe, 'value': nilai})
+
+def on_message(client, userdata, msg):
+    payload_str = msg.payload.decode('utf-8')
+
+    # --- KASUS 1: TERIMA DATA ARRAY UNTUK PREDIKSI ---
     if msg.topic == MQTT_PREDICTION_TOPIC:
-        print(f"Data diterima dari MQTT topik '{msg.topic}': {payload}")
-        print("Menerima data prediksi...")
+        print(f"Menerima data array untuk prediksi...")
         try:
-            sensor_package = json.loads(payload)
+            sensor_package = json.loads(payload_str)
             data_type = sensor_package.get('type')
             sensor_data = sensor_package.get('data')
+
+            if not sensor_data or not data_type: return
             
-            if not sensor_data or not data_type:
-                raise ValueError("Data atau tipe tidak lengkap.")
-            data_np = np.array([sensor_data])
+            # --- KONFIGURASI SPESIFIK TIPE ---
+            target_length = 0
+            needs_conversion = False
+
+            if data_type == 'gula_darah':
+                target_length = 250
+                needs_conversion = True # Aktifkan konversi 12-bit ke 8-bit
+            elif data_type == 'asam_urat':
+                target_length = 120
+            elif data_type == 'cholesterol':
+                target_length = 20
+
+            # --- PROSES DATA ---
+            data_input = preprocess_sensor_data(sensor_data, target_length, needs_conversion)
+            
+            # Hitung rata-rata untuk info tambahan (dari data yang sudah diproses)
+            numeric_value = round(np.mean(data_input), 2)
+            
             hasil_akhir = 0.0
-            numeric_value = round(sum(sensor_data) / len(sensor_data), 2)
-            
-            if data_type == 'asam_urat' and xgb_model_as:
-                xgb_pred = xgb_model_as.predict(data_np)
-                # xgb_pred_encode = label_encoder.inverse_transform(xgb_pred)
-                knn_pred = knn_predictions_as
-                hasil_akhir = (xgb_pred[0] + knn_pred[0]) / 2
-                print(f"Prediksi Asam Urat: {hasil_akhir}")
-            
-            elif data_type == 'cholesterol' and xgb_model_kol:
-                xgb_pred = xgb_model_kol.predict(data_np)
-                # xgb_pred_encode = label_encoder.inverse_transform(xgb_pred)
-                knn_pred = knn_predictions_kol
-                hasil_akhir = (xgb_pred[0] + knn_pred[0]) / 2
-                print(f"Prediksi Kolesterol: {hasil_akhir}")
-            
-            elif data_type == 'gula_darah' and xgb_model_glu:
-                xgb_pred = xgb_model_glu.predict(data_np)
-                # xgb_pred_encode = label_encoder.inverse_transform(xgb_pred)
-                knn_pred = knn_predictions_glu
-                hasil_akhir = (xgb_pred[0] + knn_pred[0]) / 2
-                print(f"Prediksi Gula Darah: {hasil_akhir}")
+
+            # --- LAKUKAN PREDIKSI ---
+            if data_type in models_xgb and data_type in models_knn:
+                # Prediksi XGBoost
+                pred_xgb = models_xgb[data_type].predict(data_input)[0]
                 
+                # Prediksi KNN (menggunakan model .pkl, BUKAN array .npy)
+                pred_knn = models_knn[data_type].predict(data_input)[0]
+                
+                # Ensemble (Rata-rata)
+                hasil_akhir = (pred_xgb + pred_knn) / 2
+                
+                print(f"Prediksi {data_type} -> XGB: {pred_xgb:.2f}, KNN: {pred_knn:.2f}, Avg: {hasil_akhir:.2f}")
+            else:
+                print(f"Model untuk {data_type} belum dimuat.")
+                return
+
+            # --- KIRIM HASIL KE TOPIK RESULT (Agar thread-safe) ---
             result_payload = {
                 'type': data_type,
                 'value': float(hasil_akhir),
-                # 'numeric_value': numeric_value
+                # 'numeric_value': float(numeric_value)
             }
             client.publish(MQTT_RESULT_TOPIC, json.dumps(result_payload))
+
         except Exception as e:
             print(f"Gagal memproses data prediksi: {e}")
+            import traceback
+            traceback.print_exc()
+
+    # --- KASUS 2: TERIMA HASIL PREDIKSI (DARI DIRI SENDIRI) ---
     elif msg.topic == MQTT_RESULT_TOPIC:
-        print(f"Data hasil prediksi diterima dari MQTT topik '{msg.topic}': {payload}")
         try:
-            result_data = json.loads(payload)
+            result_data = json.loads(payload_str)
+            # Teruskan ke browser
             socketio.emit('prediction_result', result_data)
         except Exception as e:
-            print(f"Gagal memproses data hasil prediksi: {e}")
-    elif msg.topic == MQTT_PROGRESS_TOPIC:
+            print(f"Error forward result: {e}")
+
+    # --- KASUS 3: DATA REAL-TIME & PROGRES ---
+    elif msg.topic == "akm/progress":
         try:
-            progress_data = json.loads(payload)
-            # Langsung teruskan info progres ke browser
-            socketio.emit('measurement_progress', progress_data)
-        except Exception as e:
-            print(f"Gagal mem-parsing progres: {e}")
+            socketio.emit('measurement_progress', json.loads(payload_str))
+        except: pass
         
-    if msg.topic == MQTT_DATA_TOPIC:
-        parts = payload.split(':')
+    elif msg.topic == MQTT_DATA_TOPIC:
+        # Logika data mentah (Stop / Angka)
+        parts = payload_str.split(':')
         if len(parts) == 2:
             tipe, nilai_str = parts[0].strip(), parts[1].strip()
-            try:
-                nilai = float(nilai_str)
-            except ValueError:
-                nilai = nilai_str # Ini akan menjadi "STOP"
-            socketio.emit('measurement_update', {'type': tipe, 'value': nilai})
+            # Cek STOP
+            if nilai_str.upper() == 'STOP':
+                 # Kirim sinyal stop (opsional, krn biasanya dipicu prediction_result)
+                 pass
+            else:
+                try:
+                    val = float(nilai_str)
+                    socketio.emit('measurement_update', {'type': tipe, 'value': val})
+                except: pass
 
 # Inisialisasi MQTT Client
 mqtt_client = mqtt.Client()
