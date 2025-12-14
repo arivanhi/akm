@@ -3,12 +3,13 @@ import struct
 from datetime import datetime
 from bleak import BleakClient, BleakScanner
 
-# --- KONFIGURASI ---
-ADDRESS = "00:5F:BF:BD:D0:D8" # MAC HEM-7156T Anda
+# MAC Address Tensimeter Baru
+ADDRESS = "00:5F:BF:BD:D0:D8"
 UUID_BP_MEASUREMENT = "00002a35-0000-1000-8000-00805f9b34fb"
 
-# Menyimpan data terakhir agar tidak duplicate print
+# Variabel Global
 last_processed_time = None
+data_received_flag = False
 
 def decode_sfloat(data):
     raw = struct.unpack('<H', data)[0]
@@ -23,6 +24,12 @@ class OmronMonitor:
         self.temp_measurements = []
 
     def notification_handler(self, sender, data):
+        global data_received_flag
+        data_received_flag = True
+        
+        # Print Raw Hex agar terlihat ada kehidupan
+        print(f"\n[DEBUG] RAW HEX: {data.hex()}")
+
         try:
             flags = data[0]
             unit = "kPa" if (flags & 0x01) else "mmHg"
@@ -35,7 +42,7 @@ class OmronMonitor:
             mean_ap = decode_sfloat(data[index+4:index+6])
             index += 6
             
-            dt_object = datetime.min 
+            dt_object = datetime.now()
             if has_timestamp:
                 year = struct.unpack('<H', data[index:index+2])[0]
                 month = data[index+2]
@@ -59,86 +66,91 @@ class OmronMonitor:
                 "unit": unit
             }
             self.temp_measurements.append(record)
-            print(".", end="", flush=True)
+            print("[DEBUG] Decoding OK.")
             
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"[DEBUG] Error Decoding: {e}")
 
 async def run_cycle():
-    global last_processed_time
+    global last_processed_time, data_received_flag
     monitor = OmronMonitor()
+    data_received_flag = False
     
-    print(f"\n[STANDBY] Menunggu sinyal dari Omron ({ADDRESS})...")
-    print("          (Silakan lakukan pengukuran atau tekan tombol Sync)")
+    print(f"\n[STANDBY] Menunggu Omron ({ADDRESS})...")
 
-    # 1. Scanning Spesifik (Hemat daya, menunggu sampai alat menyala)
+    # 1. Scanning
     device = await BleakScanner.find_device_by_address(ADDRESS, timeout=None)
-    
-    if not device:
-        return # Retry loop
+    if not device: return 
 
-    print(f"[DETECTED] Sinyal ditemukan! Mencoba menghubungkan...")
+    print(f"[DETECTED] Sinyal masuk. Connecting...")
 
-    # 2. Connecting & Fetching
+    # 2. Connecting
     try:
         async with BleakClient(device) as client:
-            print("[CONNECTED] Mengunduh data", end="")
+            print(f"[CONNECTED] Terhubung ke alat.")
             
-            # Optional: Pairing (biasanya sekali saja cukup, tapi kita keep agar robust)
+            # --- BAGIAN INI SUDAH DIPERBAIKI (SAFE VERSION) ---
+            print("Mencoba meminta Pairing (Cek notifikasi Windows)...")
             try:
-                if not client.is_paired: await client.pair()
-            except: pass
-
+                # Kita coba pair paksa tanpa cek status dulu
+                await client.pair()
+            except Exception as e:
+                # Jika error (misal sudah paired), abaikan saja
+                print(f"Info Pairing: {e} (Lanjut...)")
+            
+            # Subscribe
+            print("[SUBSCRIBING] Mendengarkan data...")
             await client.start_notify(UUID_BP_MEASUREMENT, monitor.notification_handler)
             
-            # Beri waktu data mengalir (Omron kirim burst cepat)
-            await asyncio.sleep(5) 
+            # Tunggu data mengalir
+            for i in range(8):
+                if data_received_flag:
+                    print("!", end="", flush=True)
+                else:
+                    print(".", end="", flush=True)
+                await asyncio.sleep(1)
             
             await client.stop_notify(UUID_BP_MEASUREMENT)
-            print("\n[DONE] Pengunduhan selesai.")
+            print("\n[DONE] Sesi selesai.")
             
     except Exception as e:
-        print(f"\n[INFO] Koneksi terputus (Normal untuk Omron): {e}")
+        print(f"\n[ERROR] Koneksi: {e}")
 
-    # 3. Processing Data Terbaru
+    # 3. Tampilkan Data
     if monitor.temp_measurements:
-        # Ambil yang paling baru berdasarkan waktu
         latest = sorted(monitor.temp_measurements, key=lambda x: x['datetime'])[-1]
         
-        # Cek apakah ini data baru atau data lama yang dikirim ulang
+        # Logika anti-duplikat
         if last_processed_time != latest['datetime']:
             print("\n" + "="*45)
-            print("           DATA PENGUKURAN BARU")
+            print("           DATA BARU DITERIMA")
             print("="*45)
             print(f" WAKTU      : {latest['datetime'].strftime('%d-%m-%Y %H:%M:%S')}")
             print(f" TENSI      : {latest['sys']} / {latest['dia']} {latest['unit']}")
             print(f" DETAK      : {latest['pulse']} bpm")
             print("="*45)
-            
-            # Update tracker
             last_processed_time = latest['datetime']
         else:
-            print("\n[INFO] Data sudah up-to-date (Tidak ada pengukuran baru).")
-    
-    # 4. Cooldown agar tidak spamming connect saat alat masih nyala
-    print("[COOLDOWN] Jeda 10 detik sebelum scan ulang...")
-    await asyncio.sleep(10)
+            print("\n[INFO] Data diterima, tapi sama dengan sebelumnya (Duplikat).")
+    else:
+        # Jika kosong, beri saran troubleshooting
+        if not data_received_flag:
+            print("\n[INFO] Data KOSONG. Pastikan:")
+            print("       1. Klik 'Allow/Pair' pada notifikasi Windows.")
+            print("       2. Ada pengukuran BARU di memori alat.")
+
+    print("[COOLDOWN] 5 detik...")
+    await asyncio.sleep(5)
 
 async def main():
-    print("--- MONITOR OMRON HEM-7156T OTOMATIS ---")
-    print("Tekan Ctrl+C untuk menghentikan program.")
-    
+    print("--- OMRON FIX OLD VERSION ---")
     while True:
         try:
             await run_cycle()
-        except asyncio.CancelledError:
+        except KeyboardInterrupt:
             break
-        except Exception as e:
-            print(f"Error Loop: {e}. Restarting scan...")
-            await asyncio.sleep(2)
+        except Exception:
+            await asyncio.sleep(1)
 
 if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        print("\nProgram dihentikan oleh user.")
+    asyncio.run(main())
