@@ -737,6 +737,15 @@ body.auth-page {
 	cursor: not-allowed;
 }
 
+/* --- KELAS BARU UNTUK TOMBOL SELESAI --- */
+.btn-selesai {
+    background: #6c757d !important; /* Warna Abu-abu Solid */
+    border-color: #5a6268 !important;
+    color: #ffffff !important;
+    cursor: default !important; /* Kursor panah biasa */
+    box-shadow: none !important; /* Hilangkan efek timbul jika ada */
+}
+
 .btn-danger {
 	background-color: #dc3545;
 	color: white;
@@ -985,4 +994,10 @@ body.auth-page {
 @keyframes spin {
     0% { transform: rotate(0deg); }
     100% { transform: rotate(360deg); }
+}
+
+.greyed-out {
+    filter: grayscale(100%); /* Membuat warna jadi hitam putih */
+    opacity: 0.6;            /* Membuatnya sedikit transparan */
+    transition: all 0.3s ease;
 }

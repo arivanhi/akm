@@ -174,30 +174,6 @@
 			}, 5000);
 		}
 
-		// --- FUNGSI UNTUK MERESET SELURUH HALAMAN ---
-		/*
-		function resetMeasurementPage() {
-			// 1. Sembunyikan semua bagian konten
-			$("#measurementContent").hide();
-			$("#newPatientSection").hide();
-			$("#existingPatientSection").hide();
-			$("#measurementControl").hide();
-
-			// 2. Reset data sesi
-			currentSessionData = { patient_id: null, results: {} };
-
-			// 3. Reset form input
-			$("#newPatientForm")[0].reset();
-			$("#search_patient_name").val("");
-
-			// 4. Reset box hasil pengukuran
-			$(".result-box .value").text("- mg/dL");
-			$(".result-box .btn-ok").remove();
-
-			// 5. Tampilkan kembali modal pilihan pasien awal
-			$("#patientChoiceModal").css("display", "flex");
-		}
-			*/
 			function resetMeasurementPage() {
 			$('#measurementContent').hide();
 			$('#newPatientSection').hide();
@@ -224,8 +200,14 @@
 			const resultBox = $(`.result-box[data-type=${type}]`);
 			const measureButton = $(`.btn-measure[data-type=${type}]`);
 
-			measureButton.text("Selesai").css("background-color", "#28a745");
+			// 1. UBAH TOMBOL JADI ABU-ABU DENGAN CLASS
+			measureButton.text("Selesai");
+			measureButton.addClass("btn-selesai"); // <--- INI KUNCINYA
+
+
 			resultBox.find(".measure-status").text("Pengukuran Selesai");
+
+			
 
 			resultBox.find(".action-buttons").remove();
 			const buttonContainer = $(
@@ -234,6 +216,7 @@
 
 			const repeatButton = $('<button class="btn-ulang">Ulang</button>').on("click", function () {
 				buttonContainer.remove();
+			
 				resultBox.find(".value").text("-");
 				//resultBox.find(".numeric-indicator").text("-- mg/dL");
 
@@ -241,6 +224,7 @@
 					.data("type")
 					.replace(/_/g, " ")
 					.replace(/\b\w/g, (l) => l.toUpperCase());
+				measureButton.removeClass("btn-selesai");
 				measureButton.prop("disabled", false).css("background-color", "white").text(originalText);
 				$("#loadingTitle").text(`Mengukur ${originalText}...`);
             	$("#loadingText").text("Menunggu data awal...");
@@ -356,19 +340,6 @@
 				.css("background-color", "white");
 		});
 
-		/*
-		$("#btnFinishSession").on("click", function () {
-			$("#measurementChoiceModal").hide();
-			if (Object.keys(currentSessionData.results).length > 0 && currentSessionData.patient_id) {
-				//console.log("Mengirim data untuk disimpan:", currentSessionData);
-				socket.emit("save_session_data", currentSessionData);
-			} else {
-				showNotification("Tidak ada data baru untuk disimpan. Sesi selesai.", "info");
-				// Langsung reset jika tidak ada data
-				resetMeasurementPage();
-			}
-		});
-		*/
 
 		$("#btnFinishSession").on("click", function () {
 			$("#measurementChoiceModal").hide();
@@ -383,57 +354,6 @@
 			}
 		});
 
-		// --- ALUR 5: MENERIMA DATA DARI SERVER (WEBSOCKET) ---
-		/*
-		$(".btn-measure").on("click", function () {
-			const type = $(this).data("type");
-			const flag = $(this).data("flag");
-			const resultBox = $(`.result-box[data-type=${type}]`);
-
-			resultBox.find(".action-buttons").remove();
-			resultBox.find(".value").text("- mg/dL");
-			//resultBox.find(".numeric-indicator").text("-- mg/dL");
-			resultBox.find(".measure-status").text("Memulai pengukuran...");
-
-			$(this).prop("disabled", true).text("Mengukur...");
-			socket.emit("start_measurement", { type: type, flag: flag });
-			$("#measurementChoiceModal").hide();
-		});
-
-		// Handler ini untuk update nilai real-time & menangani sinyal STOP
-		socket.on("measurement_update", function (data) {
-			// Cek jika ini adalah sinyal STOP dari MQTT
-			if (typeof data.value === "string" && data.value.toUpperCase() === "STOP") {
-				//console.log("Sinyal STOP diterima untuk:", data.type);
-				showActionButtons(data.type); // Tampilkan tombol OK/Ulang
-				return; // Hentikan eksekusi
-			}
-
-			// Jika ini data angka biasa, tampilkan sebagai nilai real-time
-			//console.log(`Update nilai untuk ${data.type}: ${data.value}`);
-			const resultBox = $(`.result-box[data-type=${data.type}] mg/dL`);
-			//resultBox.find(".numeric-indicator").text(`${data.value} mg/dL`); // Update indikator kecil
-			resultBox.find(".measure-status").text("Menerima data...");
-		});
-
-		socket.on("measurement_progress", function (data) {
-			// data akan berisi: {type: "cholesterol", current: 25, target: 120}
-			console.log("Menerima progres:", data);
-			const resultBox = $(`.result-box[data-type=${data.type}]`);
-
-			// Pastikan kita punya data yang valid untuk dihitung
-			if (data.current && data.target > 0) {
-				// Hitung persentase dan bulatkan ke angka terdekat
-				const percentage = Math.round((data.current / data.target) * 100);
-
-				// Update status loading dengan persentase
-				resultBox.find(".measure-status").text(`Mengumpulkan data: ${percentage}%`);
-			} else {
-				// Fallback jika data tidak lengkap
-				resultBox.find(".measure-status").text("Mengumpulkan data...");
-			}
-		});
-		*/
 		$(".btn-measure").on("click", function () {
         const type = $(this).data("type");
         const flag = $(this).data("flag");
@@ -496,15 +416,6 @@
             showActionButtons(data.type);
         });
 
-		// --- PERBAIKAN UTAMA DI SINI ---
-		/*
-		socket.on("save_status", function (data) {
-			// Tampilkan notifikasi dari server
-			showNotification(data.message, data.status);
-			// Reset seluruh halaman SETELAH menerima konfirmasi
-			resetMeasurementPage();
-		});
-		*/
 		socket.on("save_status", function (data) {
         showNotification(data.message, data.status);
         
@@ -576,10 +487,11 @@
             contentType: "application/json",
             data: JSON.stringify(payload),
             success: function(response) {
-                alert(response.message);
+                showNotification(response.message, "success");
             },
             error: function(err) {
-                alert("Gagal mencetak: " + (err.responseJSON ? err.responseJSON.message : "Printer error"));
+                let msg = err.responseJSON ? err.responseJSON.message : "Gagal mencetak";
+                showNotification(msg, "danger");
             },
             complete: function() {
                 btn.prop('disabled', false).html(originalText);

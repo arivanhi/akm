@@ -546,16 +546,7 @@ def print_receipt():
         return jsonify({'status': 'error', 'message': 'Unauthorized'}), 401
 
     data = request.json
-    # Data yang diharapkan dari frontend:
-    # {
-    #   "nama": "Lula",
-    #   "tanggal": "2023-10-27 10:00",
-    #   "hasil": [
-    #       {"tipe": "Asam Urat", "nilai": "5.5 mg/dL", "status": "Normal"},
-    #       {"tipe": "Kolesterol", "nilai": "210 mg/dL", "status": "Tinggi"}
-    #   ]
-    # }
-
+    
     try:
         # Koneksi ke Printer via RFCOMM0
         # Baudrate 9600 biasanya standar untuk EPPOS
