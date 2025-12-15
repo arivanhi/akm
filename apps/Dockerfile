@@ -4,6 +4,11 @@ FROM python:3.10-slim
 # Langkah 2: Tentukan folder kerja di dalam container
 WORKDIR /app
 
+RUN apt-get update && apt-get install -y \
+    libusb-1.0-0 \
+    libusb-1.0-0-dev \
+    && rm -rf /var/lib/apt/lists/*
+
 # Langkah 3: Salin file requirements dan install dependencies terlebih dahulu
 # Ini memanfaatkan cache Docker agar tidak perlu install ulang setiap ada perubahan kode
 COPY requirements.txt requirements.txt

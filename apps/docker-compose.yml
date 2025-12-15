@@ -11,6 +11,9 @@ services:
       - TZ=Asia/Jakarta
     ports:
       - "5000:5000" # Hubungkan port 5000 di komputer Anda ke port 5000 di container
+    devices:  # <--- TAMBAHAN PENTING
+      # - "/dev/rfcomm0:/dev/rfcomm0"
+      - /dev/bus/usb:/dev/bus/usb
     volumes:
       - .:/app # Sinkronisasi folder proyek dengan folder /app di container
     env_file:

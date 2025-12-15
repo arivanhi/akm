@@ -529,7 +529,62 @@
     
     // 1. Tombol Print
     $('#btnPrint').on('click', function() {
-        window.print();
+        const btn = $(this);
+        
+        // Kumpulkan data saat ini untuk dicetak
+        // Kita ambil data dari currentSessionData dan tampilan layar
+        
+        // Format Tanggal Hari ini
+        const now = new Date();
+        const dateStr = now.toLocaleDateString('id-ID') + ' ' + now.toLocaleTimeString('id-ID');
+
+        let hasilArray = [];
+        
+        // Cek Asam Urat
+        if(currentSessionData.results['asam_urat']) {
+             let val = currentSessionData.results['asam_urat'];
+             let status = $(`.result-box[data-type="asam_urat"] .classification-status`).text();
+             hasilArray.push({tipe: "Asam Urat", nilai: val + " mg/dL", status: status});
+        }
+        // Cek Kolesterol
+        if(currentSessionData.results['cholesterol']) {
+             let val = currentSessionData.results['cholesterol'];
+             let status = $(`.result-box[data-type="cholesterol"] .classification-status`).text();
+             hasilArray.push({tipe: "Kolesterol", nilai: val + " mg/dL", status: status});
+        }
+        // Cek Gula Darah
+        if(currentSessionData.results['gula_darah']) {
+             let val = currentSessionData.results['gula_darah'];
+             let status = $(`.result-box[data-type="gula_darah"] .classification-status`).text();
+             hasilArray.push({tipe: "Gula Darah", nilai: val + " mg/dL", status: status});
+        }
+
+        const payload = {
+            nama: $("#detail_nama").text(),
+            tanggal: dateStr,
+            hasil: hasilArray
+        };
+
+        // Efek Loading Tombol
+        let originalText = btn.html();
+        btn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Mencetak...');
+
+        // Kirim ke Backend
+        $.ajax({
+            url: "/api/print_receipt",
+            method: "POST",
+            contentType: "application/json",
+            data: JSON.stringify(payload),
+            success: function(response) {
+                alert(response.message);
+            },
+            error: function(err) {
+                alert("Gagal mencetak: " + (err.responseJSON ? err.responseJSON.message : "Printer error"));
+            },
+            complete: function() {
+                btn.prop('disabled', false).html(originalText);
+            }
+        });
     });
 
     // 2. Tombol Email (Placeholder)

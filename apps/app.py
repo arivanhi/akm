@@ -16,7 +16,8 @@ from sklearn.preprocessing import LabelEncoder
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.metrics import confusion_matrix, accuracy_score
 import joblib
-
+import subprocess
+from escpos.printer import Serial, Usb
 
 
 # Muat environment variables dari file .env
@@ -28,6 +29,10 @@ MQTT_COMMAND_TOPIC = "akm/command"
 MQTT_PREDICTION_TOPIC = "akm/prediction_data"
 MQTT_RESULT_TOPIC = "akm/prediction_result"
 MQTT_PROGRESS_TOPIC = "akm/progress" 
+
+# PRINTER_MAC = "5A:4A:FA:C1:6E:D0"  # <--- ISI MAC ADDRESS PRINTER
+# PORT = '/dev/rfcomm0'
+# BAUDRATE = 9600
 
 # --- Konfigurasi Aplikasi Flask ---
 app = Flask(__name__)
@@ -75,7 +80,37 @@ except Exception as e:
     print("Pastikan Anda sudah menjalankan script 'train_..._regression.py' untuk semua tipe.")
 
 # =================================================================
-
+def setup_bluetooth_connection():
+    """
+    Fungsi ini akan memaksa binding rfcomm0 sebelum mencetak.
+    Solusi anti-gagal jika keyboard mengambil alih koneksi.
+    """
+    print("Memeriksa koneksi printer...")
+    
+    # 1. Cek apakah port sudah ada
+    if not os.path.exists(PORT):
+        print(f"Port {PORT} tidak ditemukan. Mencoba binding ulang...")
+        
+        # Jalankan perintah rfcomm bind via terminal command
+        # Kita gunakan 'sudo' di dalam command, pastikan user pi bisa sudo tanpa password
+        # atau jalankan script ini dengan 'sudo python ...'
+        cmd = f"rfcomm bind 0 {PRINTER_MAC} 1" # Angka 1 adalah channel (biasanya 1)
+        
+        try:
+            subprocess.run(cmd, shell=True, check=True)
+            print("Binding perintah dikirim. Menunggu 3 detik...")
+            time.sleep(3) # Tunggu sebentar agar port terbentuk
+        except subprocess.CalledProcessError:
+            print("Gagal melakukan binding. Pastikan MAC Address benar.")
+            return False
+            
+    # 2. Cek lagi setelah binding
+    if os.path.exists(PORT):
+        print("Koneksi Bluetooth Printer Siap!")
+        return True
+    else:
+        print("Gagal terhubung ke printer.")
+        return False
 # --- FUNGSI BANTUAN: PREPROCESSING DATA ---
 def preprocess_sensor_data(data_list, target_length, needs_conversion=False):
     """
@@ -504,6 +539,65 @@ def measure():
             conn.close()
 
     return render_template('measure.html')
+
+@app.route('/api/print_receipt', methods=['POST'])
+def print_receipt():
+    if g.user is None:
+        return jsonify({'status': 'error', 'message': 'Unauthorized'}), 401
+
+    data = request.json
+    # Data yang diharapkan dari frontend:
+    # {
+    #   "nama": "Lula",
+    #   "tanggal": "2023-10-27 10:00",
+    #   "hasil": [
+    #       {"tipe": "Asam Urat", "nilai": "5.5 mg/dL", "status": "Normal"},
+    #       {"tipe": "Kolesterol", "nilai": "210 mg/dL", "status": "Tinggi"}
+    #   ]
+    # }
+
+    try:
+        # Koneksi ke Printer via RFCOMM0
+        # Baudrate 9600 biasanya standar untuk EPPOS
+        # p = Serial(devfile=PORT, baudrate=BAUDRATE, bytesize=8, parity='N', stopbits=1, timeout=1.00, dsrdtr=True)
+        p = Usb(0x0416, 0x5011, 0, 0x81, 0x03)
+
+        # --- FORMAT STRUK ---
+        p.set(align='center')
+        p.text("Hasil Pemeriksaan Kesehatan\n")
+        p.text("================================\n")
+        
+        p.set(align='left')
+        p.text(f"Nama    : {data.get('nama')}\n")
+        p.text(f"Tanggal : {data.get('tanggal')}\n")
+        p.text("--------------------------------\n")
+
+        results = data.get('hasil', [])
+        for res in results:
+            tipe = res['tipe']
+            nilai = res['nilai']
+            status = res['status']
+            
+            p.set(bold=True)
+            p.text(f"{tipe}\n")
+            p.set(bold=False)
+            p.text(f"Nilai  : {nilai}\n")
+            
+
+        p.set(align='center')
+        p.text("- - - - - - - - - - - - - - - - \n")
+        p.text("Terima Kasih\n")
+        p.text("Semoga Sehat Selalu\n")
+        p.text("\n\n\n") # Feed kertas ke bawah
+        
+        # PENTING: Tutup koneksi agar tidak lock
+        p.close() 
+
+        return jsonify({'status': 'success', 'message': 'Struk berhasil dicetak!'})
+
+    except Exception as e:
+        print(f"Error Printer: {e}")
+        return jsonify({'status': 'error', 'message': 'Gagal mencetak. Cek koneksi printer.'}), 500
 
 @app.route('/upload_data', methods=['POST'])
 def upload_data():
