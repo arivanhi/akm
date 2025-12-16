@@ -17,9 +17,12 @@
 	<div class="modal-content">
 		<h2>Pilih Jenis Pengukuran</h2>
 		<div class="measurement-buttons">
-			<button class="btn-measure" data-type="asam_urat" data-flag="2">Asam Urat</button>
+			<button	button class="btn-measure" data-type="asam_urat" data-flag="2">Asam Urat</button>
 			<button class="btn-measure" data-type="cholesterol" data-flag="1">Kolesterol</button>
 			<button class="btn-measure" data-type="gula_darah" data-flag="3">Gula Darah</button>
+			<button class="btn-measure" data-type="tensi" data-flag="4">Gula Darah</button>
+			<button class="btn-measure" data-type="tinggi_badan" data-flag="5">Gula Darah</button>
+			<button class="btn-measure" data-type="berat_badan" data-flag="6">Gula Darah</button>
 		</div>
 		<button id="btnFinishSession" class="btn-modal btn-danger" style="margin-top: 20px">Selesai Sesi</button>
 	</div>
@@ -96,6 +99,7 @@
     </div>
 
 	<div class="results-grid">
+		
 		<div class="result-box" data-type="asam_urat">
 			<h4>Asam Urat</h4>
 			<p class="reference-range">Normal: 3.4 - 7.0 mg/dL</p>
@@ -114,6 +118,27 @@
 			<p class="measure-status"></p>
 			<p class="value">-</p>
 		</div>
+		<div class="result-box" data-type="tensi">
+                <h4>Tekanan Darah</h4>
+					<div class="reference-range">Normal: 120/80 mmHg</div>
+                    <div class="measure-status">Menunggu Pengukuran</div>
+					<p class="value">-</p>
+					<p class="numeric-indicator">Pulse: - bpm</p>
+					<p class="classification-status"></p>    
+            </div>
+
+            <div class="result-box" data-type="tinggi_badan">
+                <h4>Tinggi Badan</h4>
+				<div class="measure-status">Menunggu Pengukuran</div>
+				<p class="value">-</p>   
+            </div>
+
+            <div class="result-box" data-type="berat_badan">
+                <h4>Berat Badan</h4>
+				<div class="reference-range">Normal: 18.5 - 24.9</div>
+				<div class="measure-status">Menunggu Pengukuran</div>
+                <p class="value">-</p>
+            </div>
 	</div>
 </div>
 <div id="loadingOverlay" class="loading-overlay" style="display: none;">
@@ -189,10 +214,10 @@
 			$('#search_patient_name').val("");
 			
 			$(".result-box .value").text("-");
-			$(".result-box .numeric-indicator").text("-- mg/dL");
+			$(".result-box .numeric-indicator").text("");
 			$(".result-box .measure-status").text("");
 			$('.result-box .action-buttons').remove();
-			$(".classification-status").text("-").removeClass('status-normal status-tinggi status-rendah');
+			$(".classification-status").text("").removeClass('status-normal status-tinggi status-rendah');
 			
 			$("#patientChoiceModal").css("display", "flex");
 		}
@@ -335,6 +360,9 @@
 					let type = $(this).data("type");
 					if (type === "asam_urat") return "Asam Urat";
 					if (type === "gula_darah") return "Gula Darah";
+					if (type === "tensi") return "Tekanan Darah";
+					if (type === "tinggi_badan") return "Tinggi Badan";
+					if (type === "berat_badan") return "Berat Badan";
 					return "Kolesterol";
 				})
 				.css("background-color", "white");
@@ -353,7 +381,7 @@
 				resetMeasurementPage();
 			}
 		});
-
+		/*
 		$(".btn-measure").on("click", function () {
         const type = $(this).data("type");
         const flag = $(this).data("flag");
@@ -374,8 +402,137 @@
         socket.emit("start_measurement", { type: type, flag: flag, patient_id: currentSessionData.patient_id, patient_name: currentSessionData.patient_name });
         $("#measurementChoiceModal").hide();
     });
+	*/
+	$(".btn-measure").on("click", function () {
+        const type = $(this).data("type");
+        const flag = $(this).data("flag");
+        // Bersihkan label dari icon fontawesome agar bersih (misal: " Kolesterol")
+        const label = $(this).text().trim(); 
+
+        // 1. TUTUP MODAL PILIHAN DULU
+        $("#measurementChoiceModal").hide();
+
+        const box = $(`.result-box[data-type=${type}]`);
+
+        // ============================================================
+        // KASUS A: INPUT MANUAL (TINGGI & BERAT BADAN)
+        // ============================================================
+        if (type === 'tinggi_badan' || type === 'berat_badan') {
+            let promptText = (type === 'tinggi_badan') ? "Masukkan Tinggi Badan (cm):" : "Masukkan Berat Badan (kg):";
+            let val = prompt(promptText);
+
+            // Validasi Input
+            if (val && !isNaN(val)) {
+                val = parseFloat(val); // Ubah ke angka
+                
+                // Simpan ke session data
+                currentSessionData.results[type] = val;
+
+                // Update Tampilan Kotak
+                box.find('.value').text(val);
+                box.find('.measure-status').text("Selesai (Manual)");
+                
+                // --- FITUR EKSTRA: HITUNG BMI OTOMATIS ---
+                // Jika input berat badan, dan tinggi badan sudah ada, hitung BMI
+                if (type === 'berat_badan' && currentSessionData.results['tinggi_badan']) {
+                    let t = currentSessionData.results['tinggi_badan'] / 100; // cm ke meter
+                    let b = val;
+                    let bmi = (b / (t * t)).toFixed(1);
+                    
+                    // Update teks BMI di kotak Berat Badan
+                    box.find('.numeric-indicator').text(`BMI: ${bmi}`);
+                }
+
+                // Munculkan tombol selesai/ulang (fungsi yang sudah kita buat tadi)
+                showActionButtons(type);
+            } else {
+                // Jika user klik Cancel atau input salah, buka modal lagi
+                if (val !== null) alert("Input harus berupa angka!");
+                $("#measurementChoiceModal").css("display", "flex");
+            }
+            return; // BERHENTI DI SINI (Jangan jalankan kode socket di bawah)
+        }
+
+        // ============================================================
+        // KASUS B: SENSOR (KOLESTEROL, ASAM URAT, GULA, TENSI)
+        // ============================================================
+        
+        // 1. Reset Tampilan Kotak Sebelum Mengukur
+        box.find('.action-buttons').remove();
+        box.find('.value').text('-');
+        box.find('.classification-status').text('').removeClass('status-normal status-tinggi status-rendah');
+        
+        // Reset indikator kecil (Kecuali Tensi agar format Pulse tidak hilang tertimpa mg/dL)
+    
+            box.find('.numeric-indicator').text('');
+     
+        // 2. Atur Teks Loading (Khusus Tensi beda teks)
+        $("#loadingTitle").text(`Mengukur ${label}...`);
+        
+        if (type === 'tensi') {
+            $("#loadingText").text("Mohon tenang, jangan bergerak atau bicara...");
+        } else {
+            $("#loadingText").text("Menunggu data dari sensor...");
+        }
+
+        // 3. Tampilkan Overlay
+        $("#loadingOverlay").fadeIn();
+
+        // 4. Update Tombol di Modal (Visual saja, opsional karena modal ditutup)
+        $(this).prop("disabled", true).text('Mengukur...');
+
+        // 5. Kirim Perintah ke Server (Node-RED -> ESP32)
+        socket.emit("start_measurement", { 
+            type: type, 
+            flag: flag, 
+            patient_id: currentSessionData.patient_id, 
+            patient_name: currentSessionData.patient_name 
+        });
+    });
 
     socket.on("measurement_update", function (data) {
+		if (data.type === 'tensi') {
+            // Data dari Python: { type: 'tensi', sys: 120, dia: 80, pulse: 90 }
+            const resultBox = $(`.result-box[data-type="tensi"]`);
+            
+            // Update Tampilan Sistolik/Diastolik
+            const textTensi = `${data.sys}/${data.dia} mmHg`;
+            resultBox.find(".value").text(textTensi);
+			const textPulse = `Pulse: ${data.pulse} bpm`;
+			resultBox.find(".numeric-indicator").text(textPulse);
+        
+            
+            // Simpan ke sesi
+            currentSessionData.results['tensi'] = {
+                sys: data.sys,
+                dia: data.dia
+            };
+
+            // Klasifikasi Sederhana (JNC 7)
+            let status = "Normal";
+            let sys = parseInt(data.sys);
+            let dia = parseInt(data.dia);
+            
+            if (sys >= 160 || dia >= 100) status = "Hipertensi Grade 2";
+            else if (sys >= 140 || dia >= 90) status = "Hipertensi Grade 1";
+            else if (sys >= 120 || dia >= 80) status = "Pre-Hipertensi";
+            
+            resultBox.find(".classification-status").text(status);
+            
+            // Tampilkan tombol selesai
+            $("#loadingOverlay").fadeOut();
+            showActionButtons('tensi');
+            return;
+        }
+
+        // --- LOGIKA KHUSUS BERAT & TINGGI (MANUAL INPUT SIMULASI) ---
+        if (data.type === 'berat_badan' || data.type === 'tinggi_badan') {
+             // Karena belum ada sensor, data ini mungkin dummy dari server
+             updateDisplay(data.type, data.value);
+             showActionButtons(data.type);
+             $("#loadingOverlay").fadeOut();
+             return;
+        }
         // Update angka kecil di kartu (opsional, bisa dihapus jika ingin fokus ke overlay saja)
         $(`.result-box[data-type=${data.type}] .numeric-indicator`).text(`${data.value} mg/dL`);
     });
@@ -469,6 +626,11 @@
              let status = $(`.result-box[data-type="gula_darah"] .classification-status`).text();
              hasilArray.push({tipe: "Gula Darah", nilai: val + " mg/dL", status: status});
         }
+		if(currentSessionData.results['tensi']) {
+			 let val = currentSessionData.results['tensi'];
+			 let status = $(`.result-box[data-type="tensi"] .classification-status`).text();
+			 hasilArray.push({tipe: "Tekanan Darah", nilai: `${val.sys}/${val.dia} mmHg`, status: status});
+		}
 
         const payload = {
             nama: $("#detail_nama").text(),

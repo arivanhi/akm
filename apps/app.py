@@ -2,6 +2,7 @@ import os
 import io
 import csv
 import psycopg2
+from psycopg2.extras import RealDictCursor
 import bcrypt
 import asyncio
 import json
@@ -153,92 +154,6 @@ def on_connect(client, userdata, flags, rc):
     client.subscribe(MQTT_PROGRESS_TOPIC)
     print(f"Subscribe ke topik: {MQTT_DATA_TOPIC}, {MQTT_RESULT_TOPIC}, {MQTT_PROGRESS_TOPIC} dan {MQTT_PREDICTION_TOPIC}")
 
-# def on_message(client, userdata, msg):
-#     """Menerima data dari MQTT dan meneruskannya apa adanya ke browser."""
-#     payload = msg.payload.decode('utf-8')
-#     print(f"Data diterima dari MQTT topik '{msg.topic}': {payload}")
-    
-#     parts = payload.split(':')
-#     if len(parts) == 2:
-#         tipe, nilai_str = parts[0].strip(), parts[1].strip()
-#         try:
-#             nilai = float(nilai_str)
-#         except ValueError:
-#             nilai = nilai_str # Ini akan menjadi "STOP"
-#         socketio.emit('measurement_update', {'type': tipe, 'value': nilai})
-
-# def on_message(client, userdata, msg):
-#     """Menerima data dari MQTT, lakukan prediksi, dan kirim hasil ke browser."""
-#     payload = msg.payload.decode('utf-8')
-    
-#     if msg.topic == MQTT_PREDICTION_TOPIC:
-#         print(f"Data diterima dari MQTT topik '{msg.topic}': {payload}")
-#         print("Menerima data prediksi...")
-#         try:
-#             sensor_package = json.loads(payload)
-#             data_type = sensor_package.get('type')
-#             sensor_data = sensor_package.get('data')
-            
-#             if not sensor_data or not data_type:
-#                 raise ValueError("Data atau tipe tidak lengkap.")
-#             data_np = np.array([sensor_data])
-#             hasil_akhir = 0.0
-#             numeric_value = round(sum(sensor_data) / len(sensor_data), 2)
-            
-#             if data_type == 'asam_urat' and xgb_model_as:
-#                 xgb_pred = xgb_model_as.predict(data_np)
-#                 # xgb_pred_encode = label_encoder.inverse_transform(xgb_pred)
-#                 knn_pred = knn_predictions_as
-#                 hasil_akhir = (xgb_pred[0] + knn_pred[0]) / 2
-#                 print(f"Prediksi Asam Urat: {hasil_akhir}")
-            
-#             elif data_type == 'cholesterol' and xgb_model_kol:
-#                 xgb_pred = xgb_model_kol.predict(data_np)
-#                 # xgb_pred_encode = label_encoder.inverse_transform(xgb_pred)
-#                 knn_pred = knn_predictions_kol
-#                 hasil_akhir = (xgb_pred[0] + knn_pred[0]) / 2
-#                 print(f"Prediksi Kolesterol: {hasil_akhir}")
-            
-#             elif data_type == 'gula_darah' and xgb_model_glu:
-#                 xgb_pred = xgb_model_glu.predict(data_np)
-#                 # xgb_pred_encode = label_encoder.inverse_transform(xgb_pred)
-#                 knn_pred = knn_predictions_glu
-#                 hasil_akhir = (xgb_pred[0] + knn_pred[0]) / 2
-#                 print(f"Prediksi Gula Darah: {hasil_akhir}")
-                
-#             result_payload = {
-#                 'type': data_type,
-#                 'value': float(hasil_akhir),
-#                 # 'numeric_value': numeric_value
-#             }
-#             client.publish(MQTT_RESULT_TOPIC, json.dumps(result_payload))
-#         except Exception as e:
-#             print(f"Gagal memproses data prediksi: {e}")
-#     elif msg.topic == MQTT_RESULT_TOPIC:
-#         print(f"Data hasil prediksi diterima dari MQTT topik '{msg.topic}': {payload}")
-#         try:
-#             result_data = json.loads(payload)
-#             socketio.emit('prediction_result', result_data)
-#         except Exception as e:
-#             print(f"Gagal memproses data hasil prediksi: {e}")
-#     elif msg.topic == MQTT_PROGRESS_TOPIC:
-#         try:
-#             progress_data = json.loads(payload)
-#             # Langsung teruskan info progres ke browser
-#             socketio.emit('measurement_progress', progress_data)
-#         except Exception as e:
-#             print(f"Gagal mem-parsing progres: {e}")
-        
-#     if msg.topic == MQTT_DATA_TOPIC:
-#         parts = payload.split(':')
-#         if len(parts) == 2:
-#             tipe, nilai_str = parts[0].strip(), parts[1].strip()
-#             try:
-#                 nilai = float(nilai_str)
-#             except ValueError:
-#                 nilai = nilai_str # Ini akan menjadi "STOP"
-#             socketio.emit('measurement_update', {'type': tipe, 'value': nilai})
-
 def on_message(client, userdata, msg):
     payload_str = msg.payload.decode('utf-8')
     print(f"Data diterima dari MQTT topik '{msg.topic}': {payload_str}")
@@ -250,16 +165,41 @@ def on_message(client, userdata, msg):
             sensor_package = json.loads(payload_str)
             data_type = sensor_package.get('type')
             sensor_data = sensor_package.get('data')
+            
+            if data_type == 'tensi':
+                raw_sys = str(sensor_package.get('sys', '0'))
+                raw_dia = str(sensor_package.get('dia', '0'))
+                raw_pulse = str(sensor_package.get('pulse', '0'))
+
+                # Bersihkan spasi/enter
+                clean_sys = raw_sys.strip()
+                clean_dia = raw_dia.strip()
+                clean_pulse = raw_pulse.strip()
+
+                print(f"Mengirim Tensi ke Web -> Sys:{clean_sys}, Dia:{clean_dia}, Pulse:{clean_pulse}")
+
+                # Kirim data BERSIH ke Frontend
+                socketio.emit('measurement_update', {
+                    'type': 'tensi',
+                    'sys': clean_sys,
+                    'dia': clean_dia,
+                    'pulse': clean_pulse
+                })
+                print("Data Tensi dikirim ke Frontend.")
+                
+                # JANGAN LANJUT KE BAWAH (ML PREDICTION)
+                return
 
             if not sensor_data or not data_type: return
             
             # --- KONFIGURASI SPESIFIK TIPE ---
             target_length = 0
             needs_conversion = False
-
+            
+            
             if data_type == 'gula_darah':
                 target_length = 250
-                needs_conversion = True # Aktifkan konversi 12-bit ke 8-bit
+                needs_conversion = False # Aktifkan konversi 12-bit ke 8-bit
             elif data_type == 'asam_urat':
                 target_length = 120
             elif data_type == 'cholesterol':
@@ -573,6 +513,7 @@ def print_receipt():
             p.text(f"{tipe}\n")
             p.set(bold=False)
             p.text(f"Nilai  : {nilai}\n")
+            p.text(f"Status : {status}\n")
             
 
         p.set(align='center')
@@ -675,16 +616,42 @@ def handle_save_session(data):
     cholesterol = results.get('cholesterol', 0.0)
     uric_acid = results.get('asam_urat', 0.0)
     blood_sugar = results.get('gula_darah', 0.0)
+    tensi_data = results.get('tensi')
+    if isinstance(tensi_data, dict):
+        bp_sys = int(tensi_data.get('sys', 0))
+        bp_dia = int(tensi_data.get('dia', 0))
+        bp_pulse = int(tensi_data.get('pulse', 0))
+    else:
+        # Jika data tensi belum ada/kosong
+        bp_sys = 0
+        bp_dia = 0
+        bp_pulse = 0
 
+    # Fisik (Manual Input)
+    height = float(results.get('tinggi_badan', 0.0))
+    weight = float(results.get('berat_badan', 0.0))
+
+    # --- 2. SIMPAN KE DATABASE ---
     conn = get_db_connection()
     cur = conn.cursor()
     try:
         cur.execute(
             """
-            INSERT INTO measurements (patient_id, user_id, cholesterol_value, uric_acid_value, blood_sugar_value)
-            VALUES (%s, %s, %s, %s, %s)
+            INSERT INTO measurements (
+                patient_id, user_id, 
+                cholesterol_value, uric_acid_value, blood_sugar_value, 
+                blood_pressure_sys, blood_pressure_dia, blood_pressure_pulse,
+                height, weight,
+                measured_at
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
             """,
-            (patient_id, user_id, cholesterol, uric_acid, blood_sugar)
+            (
+                patient_id, user_id,
+                cholesterol, uric_acid, blood_sugar,
+                bp_sys, bp_dia, bp_pulse,
+                height, weight
+            )
         )
         conn.commit()
         print(f"Data pengukuran untuk pasien ID {patient_id} berhasil disimpan.")
@@ -740,29 +707,86 @@ def data_pengukuran():
 
     return render_template('data_pengukuran.html', patients=patients_with_dates)
 
+@app.route('/api/patient_history/<int:patient_id>')
+def api_patient_history(patient_id):
+    start_date = request.args.get('start_date')
+    end_date = request.args.get('end_date')
+
+    # Query Dasar
+    query = """
+        SELECT 
+            id, 
+            measured_at, 
+            cholesterol_value, 
+            uric_acid_value, 
+            blood_sugar_value,
+            blood_pressure_sys, 
+            blood_pressure_dia, 
+            height, 
+            weight
+        FROM measurements
+        WHERE patient_id = %s
+    """
+    params = [patient_id]
+
+    # Filter Tanggal (Opsional)
+    if start_date and end_date:
+        query += " AND measured_at BETWEEN %s AND %s"
+        params.extend([start_date, end_date])
+    
+    query += " ORDER BY measured_at DESC"
+
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor) # Gunakan RealDictCursor agar hasil jadi JSON
+    cur.execute(query, tuple(params))
+    history = cur.fetchall()
+    
+    cur.close()
+    conn.close()
+
+    # Format Tanggal agar enak dibaca di JS
+    for record in history:
+        if record['measured_at']:
+            record['formatted_date'] = record['measured_at'].strftime('%d-%m-%Y %H:%M')
+            record['raw_date'] = record['measured_at'].strftime('%Y-%m-%d') # Untuk filter JS
+
+    return jsonify({'status': 'success', 'data': history})
+
 @app.route('/api/patient_measurements/<int:patient_id>')
 def get_patient_measurements(patient_id):
     if g.user is None:
         return jsonify({'error': 'Unauthorized'}), 401
 
-    # Ambil parameter filter dari URL (jika ada)
+    # Ambil parameter filter dari URL
     start_date = request.args.get('start_date')
     end_date = request.args.get('end_date')
 
     conn = get_db_connection()
     cur = conn.cursor()
 
-    # Query Dasar
+    # ==========================================
+    # 1. AMBIL BIODATA
+    # ==========================================
     query_bio = "SELECT nama_lengkap, umur, jenis_kelamin, alamat, nik, no_hp FROM patients WHERE id = %s"
     cur.execute(query_bio, (patient_id,))
     patient_data = cur.fetchone()
+    
     biodata = {
-        'nama': patient_data[0], 'umur': patient_data[1], 'jenis_kelamin': patient_data[2],
-        'alamat': patient_data[3], 'nik': patient_data[4], 'no_hp': patient_data[5]
+        'nama': patient_data[0], 
+        'umur': patient_data[1], 
+        'jenis_kelamin': patient_data[2],
+        'alamat': patient_data[3], 
+        'nik': patient_data[4], 
+        'no_hp': patient_data[5]
     } if patient_data else {}
 
-    # Query Data Pengukuran dengan Filter Dinamis
-    query_data = """
+    # ==========================================
+    # 2. DATA UNTUK GRAFIK (Chart)
+    # ==========================================
+    # Mengambil data: Tanggal, Kolesterol, Asam Urat, Gula
+    # Urutan: ASC (Lama ke Baru)
+    # Catatan: Pastikan nama kolom tanggal di DB Anda 'measurement_date' atau 'measured_at' (sesuaikan)
+    query_chart = """
         SELECT measured_at, cholesterol_value, uric_acid_value, blood_sugar_value
         FROM measurements
         WHERE patient_id = %s
@@ -770,69 +794,83 @@ def get_patient_measurements(patient_id):
     params = [patient_id]
 
     if start_date and end_date:
-        query_data += " AND measured_at >= %s AND measured_at <= %s"
+        query_chart += " AND measured_at >= %s AND measured_at <= %s"
         params.extend([start_date, end_date])
     
-    query_data += " ORDER BY measured_at ASC;"
+    query_chart += " ORDER BY measured_at ASC"
 
-    cur.execute(query_data, tuple(params))
-    measurements = cur.fetchall()
+    cur.execute(query_chart, tuple(params))
+    measurements_asc = cur.fetchall()
+
+    chart_data = {
+        'labels': [],
+        'cholesterol': [],
+        'uric_acid': [],
+        'blood_sugar': [],
+    }
+
+    for m in measurements_asc:
+        # m[0] = tanggal, m[1] = kol, m[2] = au, m[3] = gula
+        tgl_str = m[0].strftime('%d-%m %H:%M') if m[0] else '-'
+        chart_data['labels'].append(tgl_str)
+        chart_data['cholesterol'].append(m[1])
+        chart_data['uric_acid'].append(m[2])
+        chart_data['blood_sugar'].append(m[3])
+
+    # ==========================================
+    # 3. DATA UNTUK TABEL RIWAYAT (History)
+    # ==========================================
+    # Mengambil SEMUA data termasuk Tensi, Tinggi, Berat
+    # Urutan: DESC (Baru ke Lama) agar tabel menampilkan data terbaru di atas
+    query_history = """
+        SELECT 
+            measured_at, 
+            cholesterol_value, 
+            uric_acid_value, 
+            blood_sugar_value,
+            blood_pressure_sys, 
+            blood_pressure_dia, 
+            height, 
+            weight
+        FROM measurements
+        WHERE patient_id = %s
+    """
+    # Gunakan params yang sama (tapi kita buat list baru agar aman)
+    params_hist = [patient_id]
+    if start_date and end_date:
+        query_history += " AND measured_at >= %s AND measured_at <= %s"
+        params_hist.extend([start_date, end_date])
+
+    query_history += " ORDER BY measured_at DESC"
+
+    cur.execute(query_history, tuple(params_hist))
+    measurements_desc = cur.fetchall()
+
+    history_list = []
+    for row in measurements_desc:
+        # Kita map manual tuple ke dictionary agar JavaScript bisa membacanya
+        # row[0]=Date, [1]=Kol, [2]=AU, [3]=Gula, [4]=Sys, [5]=Dia, [6]=Height, [7]=Weight
+        history_list.append({
+            'measured_at': row[0], # Objek date asli
+            'formatted_date': row[0].strftime('%d-%m-%Y %H:%M') if row[0] else '-',
+            'cholesterol_value': row[1],
+            'uric_acid_value': row[2],
+            'blood_sugar_value': row[3],
+            'blood_pressure_sys': row[4],
+            'blood_pressure_dia': row[5],
+            'height': row[6],
+            'weight': row[7]
+        })
+
     cur.close()
     conn.close()
 
-    chart_data = {
-        'labels': [m[0].strftime('%Y-%m-%d %H:%M') for m in measurements],
-        'cholesterol': [m[1] for m in measurements],
-        'uric_acid': [m[2] for m in measurements],
-        'blood_sugar': [m[3] for m in measurements],
-    }
+    return jsonify({
+        'biodata': biodata, 
+        'chart_data': chart_data,
+        'history': history_list  # <--- Data ini yang akan masuk ke tabel
+    })
 
-    return jsonify({'biodata': biodata, 'chart_data': chart_data})
-# def get_patient_measurements(patient_id):
-#     if g.user is None:
-#         return jsonify({'error': 'Unauthorized'}), 401
-
-#     conn = get_db_connection()
-#     cur = conn.cursor()
-
-#     # Query 1: Ambil data biodata pasien
-#     cur.execute(
-#         "SELECT nama_lengkap, umur, jenis_kelamin, alamat, nik, no_hp FROM patients WHERE id = %s",
-#         (patient_id,)
-#     )
-#     patient_data = cur.fetchone()
-#     biodata = {
-#         'nama': patient_data[0],
-#         'umur': patient_data[1],
-#         'jenis_kelamin': patient_data[2],
-#         'alamat': patient_data[3],
-#         'nik': patient_data[4],
-#         'no_hp': patient_data[5]
-#     } if patient_data else {}
-
-#     # Query 2: Ambil semua riwayat pengukuran untuk chart
-#     cur.execute(
-#         """
-#         SELECT measured_at, cholesterol_value, uric_acid_value, blood_sugar_value
-#         FROM measurements
-#         WHERE patient_id = %s
-#         ORDER BY measured_at ASC;
-#         """, 
-#         (patient_id,)
-#     )
-#     measurements = cur.fetchall()
-#     cur.close()
-#     conn.close()
-
-#     chart_data = {
-#         'labels': [m[0].strftime('%d %b %Y %H:%M') for m in measurements],
-#         'cholesterol': [m[1] for m in measurements],
-#         'uric_acid': [m[2] for m in measurements],
-#         'blood_sugar': [m[3] for m in measurements],
-#     }
-
-#     # Gabungkan kedua data dalam satu response JSON
-#     return jsonify({'biodata': biodata, 'chart_data': chart_data})
 
 @app.route('/upload_patient_data/<int:patient_id>', methods=['POST'])
 def upload_patient_data(patient_id):
@@ -849,7 +887,8 @@ def upload_patient_data(patient_id):
     
     query = """
         SELECT p.nama_lengkap, p.nik, p.umur, p.jenis_kelamin,
-               m.measured_at, m.cholesterol_value, m.uric_acid_value, m.blood_sugar_value
+               m.measured_at, m.cholesterol_value, m.uric_acid_value, m.blood_sugar_value, 
+               m.blood_pressure_sys, m.blood_pressure_dia, m.height, m.weight
         FROM measurements m
         JOIN patients p ON m.patient_id = p.id
         WHERE p.id = %s
@@ -876,7 +915,9 @@ def upload_patient_data(patient_id):
         payload.append({
             "nama_pasien": row[0], "nik": row[1], "umur": row[2], "jenis_kelamin": row[3],
             "tanggal_pengukuran": row[4].isoformat(),
-            "kolesterol": row[5], "asam_urat": row[6], "gula_darah": row[7]
+            "kolesterol": row[5], "asam_urat": row[6], "gula_darah": row[7],
+            "tensi_sys": row[8], "tensi_dia": row[9],
+            "tinggi_badan": row[10], "berat_badan": row[11]
         })
 
     # Kirim ke API Eksternal
@@ -987,7 +1028,11 @@ def export_all():
             m.measured_at,
             m.cholesterol_value,
             m.uric_acid_value,
-            m.blood_sugar_value
+            m.blood_sugar_value,
+            m.blood_pressure_sys,
+            m.blood_pressure_dia,
+            m.height,
+            m.weight
         FROM measurements m
         JOIN patients p ON m.patient_id = p.id
         ORDER BY p.nama_lengkap, m.measured_at;
@@ -1001,7 +1046,7 @@ def export_all():
     writer = csv.writer(output)
 
     # Tulis baris header
-    writer.writerow(['Nama Pasien', 'NIK', 'Umur', 'Jenis Kelamin', 'Tanggal Pengukuran', 'Kolesterol (mg/dL)', 'Asam Urat (mg/dL)', 'Gula Darah (mg/dL)'])
+    writer.writerow(['Nama Pasien', 'NIK', 'Umur', 'Jenis Kelamin', 'Tanggal Pengukuran', 'Kolesterol (mg/dL)', 'Asam Urat (mg/dL)', 'Gula Darah (mg/dL)', 'Tensi Sys (mmHg)', 'Tensi Dia (mmHg)', 'Tinggi Badan (cm)', 'Berat Badan (kg)'])
 
     # Tulis semua baris data
     for row in all_data:
@@ -1038,7 +1083,8 @@ def export_selected():
     cur.execute(f"""
         SELECT
             p.nama_lengkap, p.nik, p.umur, p.jenis_kelamin,
-            m.measured_at, m.cholesterol_value, m.uric_acid_value, m.blood_sugar_value
+            m.measured_at, m.cholesterol_value, m.uric_acid_value, m.blood_sugar_value, 
+            m.blood_pressure_sys, m.blood_pressure_dia, m.height, m.weight
         FROM measurements m
         JOIN patients p ON m.patient_id = p.id
         WHERE p.id IN %s
@@ -1055,7 +1101,7 @@ def export_selected():
 
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(['Nama Pasien', 'NIK', 'Umur', 'Jenis Kelamin', 'Tanggal Pengukuran', 'Kolesterol (mg/dL)', 'Asam Urat (mg/dL)', 'Gula Darah (mg/dL)'])
+    writer.writerow(['Nama Pasien', 'NIK', 'Umur', 'Jenis Kelamin', 'Tanggal Pengukuran', 'Kolesterol (mg/dL)', 'Asam Urat (mg/dL)', 'Gula Darah (mg/dL)', 'Tensi Sys (mmHg)', 'Tensi Dia (mmHg)', 'Tinggi Badan (cm)', 'Berat Badan (kg)'])
     writer.writerows(selected_data)
     
     output.seek(0)
@@ -1079,7 +1125,8 @@ def export_patient(patient_id):
     cur.execute("""
         SELECT
             p.nama_lengkap, p.nik, p.umur, p.jenis_kelamin,
-            m.measured_at, m.cholesterol_value, m.uric_acid_value, m.blood_sugar_value
+            m.measured_at, m.cholesterol_value, m.uric_acid_value, m.blood_sugar_value, 
+            m.blood_pressure_sys, m.blood_pressure_dia, m.height, m.weight
         FROM measurements m
         JOIN patients p ON m.patient_id = p.id
         WHERE p.id = %s
@@ -1096,7 +1143,7 @@ def export_patient(patient_id):
     output = io.StringIO()
     writer = csv.writer(output)
 
-    writer.writerow(['Nama Pasien', 'NIK', 'Umur', 'Jenis Kelamin', 'Tanggal Pengukuran', 'Kolesterol (mg/dL)', 'Asam Urat (mg/dL)', 'Gula Darah (mg/dL)'])
+    writer.writerow(['Nama Pasien', 'NIK', 'Umur', 'Jenis Kelamin', 'Tanggal Pengukuran', 'Kolesterol (mg/dL)', 'Asam Urat (mg/dL)', 'Gula Darah (mg/dL)', 'Tensi Sys (mmHg)', 'Tensi Dia (mmHg)', 'Tinggi Badan (cm)', 'Berat Badan (kg)'])
     writer.writerows(patient_data)
     
     output.seek(0)

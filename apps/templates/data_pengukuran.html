@@ -119,6 +119,36 @@
         <button id="btnApplyFilter" class="btn-filter btn-primary">Terapkan</button>
         <button id="btnResetFilter" class="btn-filter btn-secondary">Reset (Semua)</button>
     </div>
+	
+	<div class="card mb-4 shadow-sm" style="border-radius: 12px; overflow: hidden;">
+    <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+        <h3 class="mb-0 font-weight-bold">Riwayat Pengukuran Lengkap</h3>
+    </div>
+    
+    <div class="card-body p-0">
+        <div class="table-responsive" style="max-height: 350px; overflow-y: auto;">
+            <table class="table table-striped table-hover mb-0" id="historyTable" style="width: 100%; border-collapse: separate; border-spacing: 0;">
+                <thead class="thead-light" style="position: sticky; top: 0; z-index: 1020;">
+                    <tr>
+                        <th class="text-center align-middle py-3" style="background-color: #e9ecef; width: 50px;">No</th>
+                        <th class="text-center align-middle py-3" style="background-color: #e9ecef;">Tanggal & Waktu</th>
+                        <th class="text-center align-middle py-3" style="background-color: #e9ecef;">Kolesterol<br><span class="text-muted" style="font-size: 0.85em; font-weight: normal;">(mg/dL)</span></th>
+                        <th class="text-center align-middle py-3" style="background-color: #e9ecef;">Asam Urat<br><span class="text-muted" style="font-size: 0.85em; font-weight: normal;">(mg/dL)</span></th>
+                        <th class="text-center align-middle py-3" style="background-color: #e9ecef;">Gula Darah<br><span class="text-muted" style="font-size: 0.85em; font-weight: normal;">(mg/dL)</span></th>
+                        <th class="text-center align-middle py-3" style="background-color: #e9ecef;">Tensi<br><span class="text-muted" style="font-size: 0.85em; font-weight: normal;">(mmHg)</span></th>
+                        <th class="text-center align-middle py-3" style="background-color: #e9ecef;">Tinggi<br><span class="text-muted" style="font-size: 0.85em; font-weight: normal;">(cm)</span></th>
+                        <th class="text-center align-middle py-3" style="background-color: #e9ecef;">Berat<br><span class="text-muted" style="font-size: 0.85em; font-weight: normal;">(kg)</span></th>
+                    </tr>
+                </thead>
+                <tbody id="historyTableBody">
+                    </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+    <div class="row">
+        </div>
     
     <div class="chart-container">
         <canvas id="measurementChart"></canvas>
@@ -126,324 +156,335 @@
 </div>
 
 {% endblock %} {% block scripts %}
+
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
-	$(document).ready(function () {
-		const listView = $("#patientListView");
-		const detailView = $("#patientDetailView");
-		const detailPatientName = $("#detailPatientName");
-		let measurementChart = null; // Variabel untuk menyimpan objek chart
-		let currentPatientId = null;
+    $(document).ready(function () {
+        const listView = $("#patientListView");
+        const detailView = $("#patientDetailView");
+        const detailPatientName = $("#detailPatientName");
+        let measurementChart = null; 
+        let currentPatientId = null;
 
-		// --- FUNGSI LOAD CHART DENGAN FILTER ---
-    function loadPatientData(patientId, startDate = null, endDate = null) {
-        currentPatientId = patientId;
-        
-        let url = `/api/patient_measurements/${patientId}`;
-        // Tambahkan query params jika ada filter tanggal
-        if (startDate && endDate) {
-            url += `?start_date=${startDate}&end_date=${endDate}`;
+        // --- FUNGSI LOAD DATA (CHART + TABEL) ---
+        function loadPatientData(patientId, startDate = null, endDate = null) {
+            currentPatientId = patientId;
+            
+            let url = `/api/patient_measurements/${patientId}`;
+            if (startDate && endDate) {
+                url += `?start_date=${startDate}&end_date=${endDate}`;
+            }
+
+            // Tampilkan loading di tabel sebelum data datang
+            $('#historyTableBody').html('<tr><td colspan="8" class="text-center"><i class="fas fa-spinner fa-spin"></i> Memuat data...</td></tr>');
+
+            $.getJSON(url, function(data) {
+                // 1. Isi Biodata
+                const bio = data.biodata;
+                $('#bio_nama').text(bio.nama);
+                $('#bio_nik').text(bio.nik);
+                $('#bio_umur').text(bio.umur);
+                $('#bio_jenis_kelamin').text(bio.jenis_kelamin);
+                $('#bio_alamat').text(bio.alamat);
+
+                // 2. Render Tabel History (Fungsi Baru)
+                if (data.history) {
+                    renderHistoryTable(data.history);
+                } else {
+                    $('#historyTableBody').html('<tr><td colspan="8" class="text-center text-danger">Data history tidak ditemukan dari server.</td></tr>');
+                }
+
+                // 3. Render Chart (Logika Lama)
+                if (measurementChart) measurementChart.destroy();
+                const ctx = document.getElementById('measurementChart').getContext('2d');
+                measurementChart = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: data.chart_data.labels,
+                        datasets: [
+                            { label: 'Kolesterol', data: data.chart_data.cholesterol, borderColor: '#3498db', backgroundColor: 'rgba(52, 152, 219, 0.2)', tension: 0.1 },
+                            { label: 'Asam Urat', data: data.chart_data.uric_acid, borderColor: '#e67e22', backgroundColor: 'rgba(230, 126, 34, 0.2)', tension: 0.1 },
+                            { label: 'Gula Darah', data: data.chart_data.blood_sugar, borderColor: '#2ecc71', backgroundColor: 'rgba(46, 204, 113, 0.2)', tension: 0.1 }
+                        ]
+                    },
+                    options: { responsive: true, plugins: { title: { display: true, text: 'Grafik Riwayat Kesehatan' } } }
+                });
+            }).fail(function() {
+                alert("Gagal mengambil data pasien.");
+                $('#historyTableBody').html('<tr><td colspan="8" class="text-center text-danger">Gagal memuat data.</td></tr>');
+            });
         }
 
-        $.getJSON(url, function(data) {
-            // Isi Biodata (sama seperti sebelumnya)
-            const bio = data.biodata;
-            $('#bio_nama').text(bio.nama);
-            $('#bio_nik').text(bio.nik);
-            $('#bio_umur').text(bio.umur);
-            $('#bio_jenis_kelamin').text(bio.jenis_kelamin);
-            $('#bio_alamat').text(bio.alamat);
+        // --- FUNGSI RENDER TABEL ---
+        function renderHistoryTable(data) {
+            const tbody = $('#historyTableBody');
+            tbody.empty();
 
-            // Render Chart
-            if (measurementChart) measurementChart.destroy();
-            const ctx = document.getElementById('measurementChart').getContext('2d');
-            measurementChart = new Chart(ctx, {
-                type: 'line',
-                data: {
-                    labels: data.chart_data.labels,
-                    datasets: [
-                        { label: 'Kolesterol', data: data.chart_data.cholesterol, borderColor: '#3498db', backgroundColor: 'rgba(52, 152, 219, 0.2)', tension: 0.1 },
-                        { label: 'Asam Urat', data: data.chart_data.uric_acid, borderColor: '#e67e22', backgroundColor: 'rgba(230, 126, 34, 0.2)', tension: 0.1 },
-                        { label: 'Gula Darah', data: data.chart_data.blood_sugar, borderColor: '#2ecc71', backgroundColor: 'rgba(46, 204, 113, 0.2)', tension: 0.1 }
-                    ]
-                },
-                options: { responsive: true, plugins: { title: { display: true, text: 'Grafik Riwayat Kesehatan' } } }
+            if (data.length === 0) {
+                tbody.html(`
+                    <tr>
+                        <td colspan="8" class="text-center py-4 text-muted">
+                            <i class="fas fa-info-circle fa-2x mb-2"></i><br>
+                            Tidak ada data riwayat pada periode ini.
+                        </td>
+                    </tr>
+                `);
+                return;
+            }
+
+            data.forEach((item, index) => {
+                // Helper: Format nilai kosong
+                const val = (v) => (v && v > 0) ? `<strong>${v}</strong>` : `<span class="text-muted" style="opacity: 0.5;">-</span>`;
+                
+                // Format Tensi
+                let tensi = `<span class="text-muted" style="opacity: 0.5;">-</span>`;
+                if (item.blood_pressure_sys > 0 || item.blood_pressure_dia > 0) {
+                    let style = "font-weight: 500;";
+                    // Merah jika tinggi
+                    if (item.blood_pressure_sys >= 140 || item.blood_pressure_dia >= 90) style += "color: #e74c3c;";
+                    tensi = `<strong><span style="${style}">${item.blood_pressure_sys}/${item.blood_pressure_dia}</span></strong>`;
+                }
+
+                // Format Tanggal: Hapus <small>, ganti dengan <br> atau spasi agar ukuran sama
+                // "15-12-2025 14:30" -> "15-12-2025" (baris 1), "14:30" (baris 2, ukuran sama)
+                let dateDisplay = item.formatted_date;
+                if (dateDisplay && dateDisplay.includes(" ")) {
+                    const parts = dateDisplay.split(" ");
+                    // Menggunakan div agar jam turun ke bawah tapi ukurannya normal (bukan small)
+                    dateDisplay = `
+                        <div style="line-height: 1.2;">
+                            <span style="font-weight: 500;">${parts[0]}</span><br>
+                        </div>
+                    `;
+                }
+
+                // Baris Tabel dengan wrapper Flexbox untuk center alignment mutlak
+                const row = `
+                    <tr>
+                        <td class="align-middle"><div class="d-flex justify-content-center">${index + 1}</div></td>
+                        <td class="align-middle"><div class="d-flex justify-content-center text-center">${dateDisplay}</div></td>
+                        <td class="align-middle"><div class="d-flex justify-content-center">${val(item.cholesterol_value)}</div></td>
+                        <td class="align-middle"><div class="d-flex justify-content-center">${val(item.uric_acid_value)}</div></td>
+                        <td class="align-middle"><div class="d-flex justify-content-center">${val(item.blood_sugar_value)}</div></td>
+                        <td class="align-middle"><div class="d-flex justify-content-center">${tensi}</div></td>
+                        <td class="align-middle"><div class="d-flex justify-content-center">${val(item.height)}</div></td>
+                        <td class="align-middle"><div class="d-flex justify-content-center">${val(item.weight)}</div></td>
+                    </tr>
+                `;
+                tbody.append(row);
+            });
+        }
+
+        // --- EVENT HANDLERS (Sama seperti sebelumnya) ---
+
+        // Klik Baris Pasien
+        $('.patient-row').on('click', function(e) {
+            if ($(e.target).is('input, a')) return;
+            const pid = $(this).data('patient-id');
+            listView.hide();
+            detailView.show();
+            $('#startDateFilter').val('');
+            $('#endDateFilter').val('');
+            loadPatientData(pid);
+        });
+
+        // Tombol Filter Preset (Hari ini, Minggu ini, Bulan ini)
+        $('.btn-filter[data-range]').on('click', function() {
+            const range = $(this).data('range');
+            const end = new Date();
+            let start = new Date();
+            end.setHours(23, 59, 59, 999); 
+
+            if (range === 'today') {
+                start.setHours(0, 0, 0, 0);
+            } else if (range === 'week') {
+                start.setDate(end.getDate() - 7);
+            } else if (range === 'month') {
+                start.setMonth(end.getMonth() - 1);
+            }
+
+            // Format UTC/ISO string disesuaikan dengan timezone lokal sederhana untuk input date
+            // Tips: Menggunakan library moment.js lebih aman, tapi ini cara vanilla JS
+            const offset = start.getTimezoneOffset() * 60000;
+            const localStart = new Date(start.getTime() - offset);
+            const localEnd = new Date(end.getTime() - offset);
+
+            const sStr = localStart.toISOString().slice(0, 10);
+            const eStr = localEnd.toISOString().slice(0, 10);
+            
+            $('#startDateFilter').val(sStr);
+            $('#endDateFilter').val(eStr);
+
+            // Format lengkap untuk API (YYYY-MM-DD HH:MM:SS)
+            loadPatientData(currentPatientId, sStr + " 00:00:00", eStr + " 23:59:59");
+        });
+
+        // Tombol Terapkan Filter Manual
+        $('#btnApplyFilter').on('click', function() {
+            let s = $('#startDateFilter').val();
+            let e = $('#endDateFilter').val();
+            if(s && e) {
+                loadPatientData(currentPatientId, s + " 00:00:00", e + " 23:59:59");
+            } else {
+                alert("Pilih tanggal mulai dan selesai.");
+            }
+        });
+
+        // Tombol Reset Filter
+        $('#btnResetFilter').on('click', function() {
+            $('#startDateFilter').val('');
+            $('#endDateFilter').val('');
+            loadPatientData(currentPatientId);
+        });
+
+        // Tombol Kembali
+        $('#backToListBtn').on('click', function() { detailView.hide(); listView.show(); });
+
+        // --- UPLOAD DATA PASIEN INI ---
+        $('#btnUploadCurrentPatient').on('click', function() {
+            const btn = $(this);
+            const originalText = btn.html();
+            
+            let s = $('#startDateFilter').val();
+            let e = $('#endDateFilter').val();
+            let payload = {};
+            
+            if (s && e) {
+                payload = { start_date: s + " 00:00:00", end_date: e + " 23:59:59" };
+            }
+
+            if(confirm("Upload data yang sedang ditampilkan ke server?")) {
+                btn.prop('disabled', true).text('Mengirim...');
+                
+                $.ajax({
+                    url: `/upload_patient_data/${currentPatientId}`,
+                    method: 'POST',
+                    contentType: 'application/json',
+                    data: JSON.stringify(payload),
+                    success: function(res) {
+                        alert(res.message);
+                    },
+                    error: function(err) {
+                        alert("Gagal upload: " + (err.responseJSON ? err.responseJSON.message : err.statusText));
+                    },
+                    complete: function() {
+                        btn.prop('disabled', false).html(originalText);
+                    }
+                });
+            }
+        });
+
+        // --- EDIT & DELETE (Logika Anda sebelumnya tetap ada di sini) ---
+        const editModal = $("#editPatientModal");
+
+        $(".action-btn-edit").on("click", function (e) {
+            e.preventDefault(); e.stopPropagation();
+            const row = $(this).closest(".patient-row");
+            const patientId = row.data("patient-id");
+
+            $.getJSON(`/api/patient/${patientId}`, function (data) {
+                $("#edit_patient_id").val(data.id);
+                $("#edit_nama_lengkap").val(data.nama_lengkap);
+                $("#edit_jenis_kelamin").val(data.jenis_kelamin);
+                $("#edit_alamat").val(data.alamat);
+                $("#edit_umur").val(data.umur);
+                $("#edit_nik").val(data.nik);
+                $("#edit_no_hp").val(data.no_hp);
+                $("#editPatientForm").data("patient-id", data.id);
+                editModal.css("display", "flex");
             });
         });
-    }
-		// Saat baris pasien diklik
-		$('.patient-row').on('click', function(e) {
-        if ($(e.target).is('input, a')) return;
-        const pid = $(this).data('patient-id');
-        listView.hide();
-        detailView.show();
-        // Reset input tanggal saat buka pasien baru
-        $('#startDateFilter').val('');
-        $('#endDateFilter').val('');
-        loadPatientData(pid); // Load semua data awal
-    });
 
-    // --- LOGIKA TOMBOL FILTER ---
-    $('.btn-filter[data-range]').on('click', function() {
-        const range = $(this).data('range');
-        const end = new Date();
-        let start = new Date();
+        $("#editPatientForm").on("submit", function (e) {
+            e.preventDefault();
+            const patientId = $(this).data("patient-id");
+            const formData = $(this).serialize();
 
-        // Set waktu ke akhir hari ini agar mencakup data hari ini
-        end.setHours(23, 59, 59, 999); 
-
-        if (range === 'today') {
-            start.setHours(0, 0, 0, 0);
-        } else if (range === 'week') {
-            start.setDate(end.getDate() - 7);
-        } else if (range === 'month') {
-            start.setMonth(end.getMonth() - 1);
-        }
-
-        // Format ke YYYY-MM-DD HH:MM:SS untuk backend
-        const fmt = (d) => d.toISOString().slice(0, 19).replace('T', ' ');
-        
-        // Update tampilan input date
-        $('#startDateFilter').val(start.toISOString().slice(0, 10));
-        $('#endDateFilter').val(end.toISOString().slice(0, 10));
-
-        loadPatientData(currentPatientId, fmt(start), fmt(end));
-    });
-
-    $('#btnApplyFilter').on('click', function() {
-        let s = $('#startDateFilter').val();
-        let e = $('#endDateFilter').val();
-        if(s && e) {
-            // Tambahkan jam agar filter akurat (awal hari s/d akhir hari)
-            loadPatientData(currentPatientId, s + " 00:00:00", e + " 23:59:59");
-        } else {
-            alert("Pilih tanggal mulai dan selesai.");
-        }
-    });
-
-    $('#btnResetFilter').on('click', function() {
-        $('#startDateFilter').val('');
-        $('#endDateFilter').val('');
-        loadPatientData(currentPatientId); // Load tanpa filter (semua)
-    });
-
-    // --- LOGIKA UPLOAD DATA PASIEN INI ---
-    $('#btnUploadCurrentPatient').on('click', function() {
-        const btn = $(this);
-        const originalText = btn.html();
-        
-        // Ambil filter tanggal saat ini (jika ada)
-        let s = $('#startDateFilter').val();
-        let e = $('#endDateFilter').val();
-        let payload = {};
-        
-        if (s && e) {
-            payload = { start_date: s + " 00:00:00", end_date: e + " 23:59:59" };
-        }
-
-        if(confirm("Upload data yang sedang ditampilkan ke server?")) {
-            btn.prop('disabled', true).text('Mengirim...');
-            
             $.ajax({
-                url: `/upload_patient_data/${currentPatientId}`,
-                method: 'POST',
-                contentType: 'application/json',
-                data: JSON.stringify(payload),
-                success: function(res) {
-                    alert(res.message);
+                url: `/patient/edit/${patientId}`,
+                method: "POST",
+                data: formData,
+                success: function (response) {
+                    if (response.status === "success") {
+                        editModal.hide();
+                        showNotification(response.message, "success");
+                        const updatedName = $("#edit_nama_lengkap").val();
+                        $(`.patient-row[data-patient-id=${patientId}] .patient-name`).text(updatedName);
+                    }
                 },
-                error: function(err) {
-                    alert("Gagal upload: " + (err.responseJSON ? err.responseJSON.message : err.statusText));
-                },
-                complete: function() {
-                    btn.prop('disabled', false).html(originalText);
-                }
+                error: function () { showNotification("Gagal memperbarui data.", "danger"); }
             });
+        });
+
+        $("#cancelEditBtn").on("click", function () { editModal.hide(); });
+
+        $(".action-btn-delete").on("click", function (e) {
+            e.preventDefault(); e.stopPropagation();
+            const row = $(this).closest(".patient-row");
+            const patientId = row.data("patient-id");
+            const patientName = row.data("patient-name");
+            $("#deletePatientName").text(patientName);
+            $("#deleteConfirmModal").css("display", "flex");
+            $("#btnConfirmDelete").data("patient-id", patientId).data("row-element", row);
+        });
+
+        $("#btnConfirmDelete").on("click", function () {
+            const patientId = $(this).data("patient-id");
+            const row = $(this).data("row-element");
+            $.ajax({
+                url: `/patient/delete/${patientId}`,
+                method: "POST",
+                success: function (response) {
+                    if (response.status === "success") {
+                        showNotification(response.message, "success");
+                        row.fadeOut(500, function () { $(this).remove(); });
+                    }
+                },
+                complete: function () { $("#deleteConfirmModal").hide(); }
+            });
+        });
+
+        $("#btnCancelDelete").on("click", function () { $("#deleteConfirmModal").hide(); });
+
+        // Helper Notification
+        function showNotification(message, category) {
+            const flashMessage = $("<div></div>").addClass(`flash-message flash-${category}`).text(message);
+            $(".flash-messages-container").append(flashMessage);
+            setTimeout(() => {
+                flashMessage.fadeOut(500, function () { $(this).remove(); });
+            }, 5000);
         }
+
+        // Export Selected Logic
+        const exportSelectedBtn = $("#exportSelectedBtn");
+        $(".patient-checkbox").on("change", function () {
+            const selectedCheckboxes = $(".patient-checkbox:checked");
+            if (selectedCheckboxes.length > 0) {
+                const selectedIds = selectedCheckboxes.map(function () { return $(this).val(); }).get();
+                const exportUrl = `{{ url_for('export_selected') }}?ids=${selectedIds.join(",")}`;
+                exportSelectedBtn.attr("href", exportUrl).removeClass("disabled");
+            } else {
+                exportSelectedBtn.removeAttr("href").addClass("disabled");
+            }
+        });
+
+        // Upload All Data
+        $("#btnUploadData").on("click", function () {
+            if (!confirm("Apakah Anda yakin ingin mengunggah semua data pengukuran ke server?")) return;
+            const button = $(this);
+            const originalText = button.text();
+            button.prop("disabled", true).text("Mengunggah...");
+            $.ajax({
+                url: "{{ url_for('upload_data') }}",
+                method: "POST",
+                success: function (response) { showNotification(response.message, "success"); },
+                error: function (xhr) {
+                    const message = xhr.responseJSON ? xhr.responseJSON.message : "Terjadi error tidak diketahui.";
+                    showNotification(message, "danger");
+                },
+                complete: function () { button.prop("disabled", false).text(originalText); }
+            });
+        });
     });
-
-    $('#backToListBtn').on('click', function() { detailView.hide(); listView.show(); });
-
-	
-		const editModal = $("#editPatientModal");
-
-		// 1. Saat tombol "Edit" di salah satu baris diklik
-		$(".action-btn-edit").on("click", function (e) {
-			e.preventDefault(); // Mencegah link default
-			e.stopPropagation(); // Mencegah event klik di baris (.patient-row)
-
-			const row = $(this).closest(".patient-row");
-			const patientId = row.data("patient-id");
-
-			// Ambil data terbaru pasien dari API
-			$.getJSON(`/api/patient/${patientId}`, function (data) {
-				// Isi form di dalam modal dengan data yang didapat
-				$("#edit_patient_id").val(data.id);
-				$("#edit_nama_lengkap").val(data.nama_lengkap);
-				$("#edit_jenis_kelamin").val(data.jenis_kelamin);
-				$("#edit_alamat").val(data.alamat);
-				$("#edit_umur").val(data.umur);
-				$("#edit_nik").val(data.nik);
-				$("#edit_no_hp").val(data.no_hp);
-
-				// Simpan patientId ke form untuk submit
-				$("#editPatientForm").data("patient-id", data.id);
-
-				// Tampilkan modal
-				editModal.css("display", "flex");
-			});
-		});
-
-		// 2. Saat form edit di-submit
-		$("#editPatientForm").on("submit", function (e) {
-			e.preventDefault();
-			const patientId = $(this).data("patient-id");
-			const formData = $(this).serialize();
-
-			$.ajax({
-				url: `/patient/edit/${patientId}`,
-				method: "POST",
-				data: formData,
-				success: function (response) {
-					if (response.status === "success") {
-						// Tutup modal
-						editModal.hide();
-						// Tampilkan notifikasi sukses
-						showNotification(response.message, "success"); // Asumsi Anda punya fungsi ini
-
-						// Update nama di daftar pasien secara real-time
-						const updatedName = $("#edit_nama_lengkap").val();
-						$(`.patient-row[data-patient-id=${patientId}] .patient-name`).text(updatedName);
-					}
-				},
-				error: function () {
-					showNotification("Gagal memperbarui data.", "danger");
-				},
-			});
-		});
-
-		// 3. Saat tombol "Batal" di modal diklik
-		$("#cancelEditBtn").on("click", function () {
-			editModal.hide();
-		});
-
-		// Tambahkan juga fungsi notifikasi jika belum ada
-		function showNotification(message, category) {
-			const flashMessage = $("<div></div>").addClass(`flash-message flash-${category}`).text(message);
-			$(".flash-messages-container").append(flashMessage);
-			setTimeout(() => {
-				flashMessage.fadeOut(500, function () {
-					$(this).remove();
-				});
-			}, 5000);
-		}
-		// --- LOGIKA UNTUK FITUR DELETE ---
-		$(".action-btn-delete").on("click", function (e) {
-			e.preventDefault();
-			e.stopPropagation();
-
-			// 1. Ambil data dari baris yang diklik
-			const row = $(this).closest(".patient-row");
-			const patientId = row.data("patient-id");
-			const patientName = row.data("patient-name");
-
-			// 2. Masukkan nama pasien ke dalam modal dan tampilkan
-			$("#deletePatientName").text(patientName);
-			$("#deleteConfirmModal").css("display", "flex");
-
-			// 3. Simpan ID pasien di tombol konfirmasi untuk digunakan nanti
-			$("#btnConfirmDelete").data("patient-id", patientId);
-			$("#btnConfirmDelete").data("row-element", row); // Simpan juga elemen barisnya
-		});
-
-		// Event handler untuk tombol "Ya, Hapus" di dalam modal
-		$("#btnConfirmDelete").on("click", function () {
-			const patientId = $(this).data("patient-id");
-			const row = $(this).data("row-element");
-
-			$.ajax({
-				url: `/patient/delete/${patientId}`,
-				method: "POST",
-				success: function (response) {
-					if (response.status === "success") {
-						showNotification(response.message, "success");
-						// Hilangkan baris dari tabel
-						row.fadeOut(500, function () {
-							$(this).remove();
-						});
-					}
-				},
-				error: function () {
-					showNotification("Gagal menghapus data.", "danger");
-				},
-				complete: function () {
-					// Selalu sembunyikan modal setelah selesai
-					$("#deleteConfirmModal").hide();
-				},
-			});
-		});
-
-		// Event handler untuk tombol "Batal"
-		$("#btnCancelDelete").on("click", function () {
-			$("#deleteConfirmModal").hide();
-		});
-
-		// --- LOGIKA UNTUK FITUR EXPORT SELECTED ---
-		const exportSelectedBtn = $("#exportSelectedBtn");
-
-		// Cek setiap kali checkbox diubah
-		$(".patient-checkbox").on("change", function () {
-			// Kumpulkan semua checkbox yang dicentang
-			const selectedCheckboxes = $(".patient-checkbox:checked");
-
-			if (selectedCheckboxes.length > 0) {
-				const selectedIds = selectedCheckboxes
-					.map(function () {
-						return $(this).val();
-					})
-					.get();
-
-				const exportUrl = `{{ url_for('export_selected') }}?ids=${selectedIds.join(",")}`;
-
-				// Aktifkan tombol: hapus class disabled dan atur URL
-				exportSelectedBtn.attr("href", exportUrl).removeClass("disabled");
-			} else {
-				// Nonaktifkan tombol: hapus URL dan tambahkan class disabled
-				exportSelectedBtn.removeAttr("href").addClass("disabled");
-			}
-		});
-
-		// Saat tombol "Kembali" diklik
-		$("#backToListBtn").on("click", function () {
-			detailView.hide();
-			listView.show();
-		});
-		$("#btnUploadData").on("click", function () {
-			if (!confirm("Apakah Anda yakin ingin mengunggah semua data pengukuran ke server?")) {
-				return;
-			}
-
-			const button = $(this);
-			const originalText = button.text();
-			button.prop("disabled", true).text("Mengunggah...");
-
-			$.ajax({
-				url: "{{ url_for('upload_data') }}",
-				method: "POST",
-				success: function (response) {
-					showNotification(response.message, "success");
-				},
-				error: function (xhr) {
-					// xhr.responseJSON.message akan berisi pesan error dari server Flask kita
-					const message = xhr.responseJSON ? xhr.responseJSON.message : "Terjadi error tidak diketahui.";
-					showNotification(message, "danger");
-				},
-				complete: function () {
-					// Kembalikan tombol ke keadaan semula setelah selesai
-					button.prop("disabled", false).text(originalText);
-				},
-			});
-		});
-	});
 </script>
 {% endblock %}

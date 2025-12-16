@@ -25,6 +25,7 @@ body {
 .result-box[data-type] .value,
 .result-box[data-type] .numeric-indicator,
 .result-box[data-type] .measure-status,
+.result-box[data-type] .classification-status,
 .result-box[data-type] .reference-range {
     color: #ffffff !important; /* Paksa text jadi putih agar kontras */
 }
@@ -61,11 +62,29 @@ body {
     box-shadow: 0 4px 15px rgba(46, 204, 113, 0.3);
 }
 
+/* 1. ASAM URAT -> ORANGE */
+.result-box[data-type="tensi"] {
+    background: linear-gradient(135deg, #9b59b6 0%, #8e44ad 100%) ;
+    box-shadow: 0 4px 15px rgba(123, 18, 243, 0.3);
+}
 
-.result-box[data-type] .classification-status {
+/* 2. KOLESTEROL -> BIRU */
+.result-box[data-type="tinggi_badan"] {
+    background: linear-gradient(135deg, #1abc9c 0%, #16a085 100%);
+    box-shadow: 0 4px 15px rgba(219, 161, 52, 0.3);
+}
+
+/* 3. GULA DARAH -> HIJAU */
+.result-box[data-type="berat_badan"] {
+    background: linear-gradient(135deg, #34495e 0%, #2c3e50 100%);
+    box-shadow: 0 4px 15px rgba(72, 85, 77, 0.3);
+}
+
+
+/* .result-box[data-type] .classification-status {
     background-color: rgba(255, 255, 255, 0.9) !important;
     box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-}
+} */
 
 /* Warna teks status menyesuaikan warna card */
 .result-box[data-type="asam_urat"] .classification-status { color: #d35400; }
@@ -729,6 +748,21 @@ body.auth-page {
 /* 3. Tombol GULA DARAH -> HIJAU */
 .btn-measure[data-type="gula_darah"] {
     background: linear-gradient(135deg, #2ecc71 0%, #27ae60 100%) !important;
+}
+
+/* 4. Tensi Darah -> UNGU */
+.btn-measure[data-type="tensi"] {
+    background: linear-gradient(135deg, #9b59b6 0%, #8e44ad 100%) !important;
+}
+
+/* 5. Tinggi Badan -> TEAL (Hijau Laut) */
+.btn-measure[data-type="tinggi_badan"] {
+    background: linear-gradient(135deg, #1abc9c 0%, #16a085 100%) !important;
+}
+
+/* 6. Berat Badan -> ABU-ABU GELAP (Titanium) */
+.btn-measure[data-type="berat_badan"] {
+    background: linear-gradient(135deg, #34495e 0%, #2c3e50 100%) !important;
 }
 .btn-measure:disabled {
 	background-color: #e9ecef;
