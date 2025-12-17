@@ -5,17 +5,20 @@ services:
   web:
     build: . # Build image dari Dockerfile di folder ini
     container_name: web_flask_app
+    network_mode: host
     restart: always
+    privileged: true
     environment:
       - PYTHONUNBUFFERED=1
       - TZ=Asia/Jakarta
     ports:
       - "5000:5000" # Hubungkan port 5000 di komputer Anda ke port 5000 di container
-    devices:  # <--- TAMBAHAN PENTING
+    devices: # <--- TAMBAHAN PENTING
       # - "/dev/rfcomm0:/dev/rfcomm0"
       - /dev/bus/usb:/dev/bus/usb
     volumes:
       - .:/app # Sinkronisasi folder proyek dengan folder /app di container
+      - /var/run/dbus:/var/run/dbus
     env_file:
       - .env # Muat environment variables dari file .env
     depends_on:
