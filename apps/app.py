@@ -189,6 +189,17 @@ def on_message(client, userdata, msg):
                 
                 # JANGAN LANJUT KE BAWAH (ML PREDICTION)
                 return
+            
+            if data_type == 'berat_badan':
+                    val = float(sensor_package.get('value', 0))
+                    print(f"Menerima Berat Badan dari BLE: {val} kg")
+                    
+                    # Kirim ke Frontend (Realtime Update)
+                    socketio.emit('measurement_update', {
+                        'type': 'berat_badan',
+                        'value': val
+                    })
+                    return # Stop disini
 
             if not sensor_data or not data_type: return
             
@@ -507,13 +518,14 @@ def print_receipt():
         for res in results:
             tipe = res['tipe']
             nilai = res['nilai']
-            status = res['status']
+      
+          
             
             p.set(bold=True)
-            p.text(f"{tipe}\n")
+            p.text(f"{tipe}: ")
             p.set(bold=False)
-            p.text(f"Nilai  : {nilai}\n")
-            p.text(f"Status : {status}\n")
+            p.text(f"{nilai}\n")
+          
             
 
         p.set(align='center')

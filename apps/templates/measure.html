@@ -417,6 +417,7 @@
         // ============================================================
         // KASUS A: INPUT MANUAL (TINGGI & BERAT BADAN)
         // ============================================================
+		/*
         if (type === 'tinggi_badan' || type === 'berat_badan') {
             let promptText = (type === 'tinggi_badan') ? "Masukkan Tinggi Badan (cm):" : "Masukkan Berat Badan (kg):";
             let val = prompt(promptText);
@@ -452,7 +453,7 @@
             }
             return; // BERHENTI DI SINI (Jangan jalankan kode socket di bawah)
         }
-
+			*/
         // ============================================================
         // KASUS B: SENSOR (KOLESTEROL, ASAM URAT, GULA, TENSI)
         // ============================================================
@@ -464,7 +465,7 @@
         
         // Reset indikator kecil (Kecuali Tensi agar format Pulse tidak hilang tertimpa mg/dL)
     
-            box.find('.numeric-indicator').text('');
+        box.find('.numeric-indicator').text('');
      
         // 2. Atur Teks Loading (Khusus Tensi beda teks)
         $("#loadingTitle").text(`Mengukur ${label}...`);
@@ -473,6 +474,12 @@
             $("#loadingText").text("Mohon tenang, jangan bergerak atau bicara...");
         } else {
             $("#loadingText").text("Menunggu data dari sensor...");
+        }
+
+		if (type === 'berat_badan') {
+             $("#loadingText").text("Silakan naik ke timbangan...");
+        } else {
+             $("#loadingText").text("Menunggu data sensor...");
         }
 
         // 3. Tampilkan Overlay
@@ -524,17 +531,30 @@
             showActionButtons('tensi');
             return;
         }
+		if(data.type === 'berat_badan') {
+			 // Data dari server: { type: 'berat_badan', value: 70 }
+			 const resultBox = $(`.result-box[data-type="berat_badan"]`);
+
+            // Update Tampilan Berat Badan
+            const textBerat = `${data.value} kg`;
+            resultBox.find(".value").text(textBerat);
+        
+            // Simpan ke sesi
+            currentSessionData.results['berat_badan'] = data.value
+
+			 $("#loadingOverlay").fadeOut();
+			 showActionButtons('berat_badan');
+			 return;
+		}
 
         // --- LOGIKA KHUSUS BERAT & TINGGI (MANUAL INPUT SIMULASI) ---
-        if (data.type === 'berat_badan' || data.type === 'tinggi_badan') {
+        if (data.type === 'tinggi_badan') {
              // Karena belum ada sensor, data ini mungkin dummy dari server
              updateDisplay(data.type, data.value);
              showActionButtons(data.type);
              $("#loadingOverlay").fadeOut();
              return;
         }
-        // Update angka kecil di kartu (opsional, bisa dihapus jika ingin fokus ke overlay saja)
-        $(`.result-box[data-type=${data.type}] .numeric-indicator`).text(`${data.value} mg/dL`);
     });
     
     socket.on("measurement_progress", function (data) {
@@ -612,24 +632,32 @@
         if(currentSessionData.results['asam_urat']) {
              let val = currentSessionData.results['asam_urat'];
              let status = $(`.result-box[data-type="asam_urat"] .classification-status`).text();
-             hasilArray.push({tipe: "Asam Urat", nilai: val + " mg/dL", status: status});
+             hasilArray.push({tipe: "Asam Urat", nilai: val + " mg/dL",});
         }
         // Cek Kolesterol
         if(currentSessionData.results['cholesterol']) {
              let val = currentSessionData.results['cholesterol'];
              let status = $(`.result-box[data-type="cholesterol"] .classification-status`).text();
-             hasilArray.push({tipe: "Kolesterol", nilai: val + " mg/dL", status: status});
+             hasilArray.push({tipe: "Kolesterol", nilai: val + " mg/dL" });
         }
         // Cek Gula Darah
         if(currentSessionData.results['gula_darah']) {
              let val = currentSessionData.results['gula_darah'];
              let status = $(`.result-box[data-type="gula_darah"] .classification-status`).text();
-             hasilArray.push({tipe: "Gula Darah", nilai: val + " mg/dL", status: status});
+             hasilArray.push({tipe: "Gula Darah", nilai: val + " mg/dL" });
         }
 		if(currentSessionData.results['tensi']) {
 			 let val = currentSessionData.results['tensi'];
 			 let status = $(`.result-box[data-type="tensi"] .classification-status`).text();
 			 hasilArray.push({tipe: "Tekanan Darah", nilai: `${val.sys}/${val.dia} mmHg`, status: status});
+		}
+		if(currentSessionData.results['tinggi_badan']) {
+			 let val = currentSessionData.results['tinggi_badan'];
+			 hasilArray.push({tipe: "Tinggi Badan", nilai: val + " cm" });
+		}
+		if(currentSessionData.results['berat_badan']) {
+			 let val = currentSessionData.results['berat_badan'];
+			 hasilArray.push({tipe: "Berat Badan", nilai: val + " kg"});
 		}
 
         const payload = {

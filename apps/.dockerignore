@@ -1,0 +1,11 @@
+# Abaikan folder data database
+postgres-data/
+postgres-data
+db_data/
+
+# Abaikan file/folder sampah lainnya agar build lebih cepat
+__pycache__/
+*.pyc
+.git/
+.env
+venv/
