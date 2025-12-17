@@ -10,7 +10,7 @@ USER_IS_MALE = True     # True jika laki-laki, False jika perempuan
 last_scale_data_hex = ""
 
 # Alamat MAC Timbangan MIBFS (ganti jika berbeda)
-TARGET_SCALE_ADDRESS = "d8:e7:2f:09:84:f9" # Alamat dari contoh awalmu
+TARGET_SCALE_ADDRESS = "d8:e7:2f:0a:94:44" # Alamat dari contoh awalmu
 
 # UUIDs
 BODY_COMPOSITION_SERVICE_UUID = "0000181b-0000-1000-8000-00805f9b34fb"
@@ -132,7 +132,7 @@ async def main_logic(target_address: str):
 
     print(f"Terhubung ke {device.name if device.name else 'Perangkat Tanpa Nama'} ({device.address})")
 
-    async with BleakClient(device) as client:
+    async with BleakClient(device, timeout=30.0) as client:
         if client.is_connected:
             print("Berhasil terhubung ke timbangan.")
             try:
