@@ -1168,19 +1168,31 @@ def upload_patient_data(patient_id):
             "tinggi_badan": row[10], "berat_badan": row[11]
         })
 
-    # Kirim ke API Eksternal
+    # 1. Ambil URL (Pastikan fungsi get_active_api_url sudah ada di file app.py Anda)
     external_api_url = get_active_api_url()
+    
     if not external_api_url:
-        return jsonify({'status': 'error', 'message': 'URL API eksternal belum disetting di .env'}), 500
+        return jsonify({'status': 'error', 'message': 'URL API belum disetting di menu Pengaturan.'}), 500
 
+    # 2. EKSEKUSI PENGIRIMAN DATA (Uncomment bagian ini)
     try:
-        # response = requests.post(external_api_url, json=payload, timeout=30)
-        # response.raise_for_status()
-        # Simulasi sukses jika API belum ada:
-        print(f"Mengupload {len(payload)} data ke {external_api_url}")
+        # Debugging: Print apa yang dikirim
+        print(f"Mengirim {len(payload)} data ke: {external_api_url}")
+        
+        # --- BARIS PENTING YANG SEBELUMNYA MATI ---
+        response = requests.post(external_api_url, json=payload, timeout=30)
+        response.raise_for_status() # Akan error jika status code bukan 200 OK
+        # ------------------------------------------
+
         return jsonify({'status': 'success', 'message': f'Berhasil mengunggah {len(payload)} data pasien ini!'})
+    
+    except requests.exceptions.RequestException as e:
+        # Tangkap error koneksi atau error dari server tujuan
+        print(f"Error Upload: {e}")
+        return jsonify({'status': 'error', 'message': f'Gagal koneksi ke server: {str(e)}'}), 500
     except Exception as e:
-        return jsonify({'status': 'error', 'message': f'Gagal upload: {str(e)}'}), 500
+        print(f"Error Lain: {e}")
+        return jsonify({'status': 'error', 'message': f'Terjadi kesalahan: {str(e)}'}), 500
 
 @app.route('/api/patient/<int:patient_id>')
 def get_patient_detail(patient_id):
@@ -1405,6 +1417,41 @@ def export_patient(patient_id):
         mimetype="text/csv",
         headers={"Content-Disposition": f"attachment;filename={filename}"}
     )
+    
+# --- ROUTE HALAMAN SHUTDOWN ---
+@app.route('/shutdown')
+def shutdown_page():
+    if g.user is None: 
+        return redirect(url_for('login'))
+    return render_template('shutdown.html')
+
+# --- API ACTION: MATIKAN KOMPUTER ---
+@app.route('/api/system/shutdown', methods=['POST'])
+def system_shutdown():
+    if g.user is None: 
+        return jsonify({'status': 'error', 'message': 'Unauthorized'}), 401
+    
+    try:
+        print("Mencoba mematikan sistem Host via DBus...")
+        # Perintah khusus untuk mematikan Host dari dalam Docker (via Systemd Login Manager)
+        cmd = [
+            'dbus-send', '--system', '--print-reply',
+            '--dest=org.freedesktop.login1',
+            '/org/freedesktop/login1',
+            'org.freedesktop.login1.Manager.PowerOff',
+            'boolean:true'
+        ]
+        subprocess.run(cmd, check=True)
+        return jsonify({'status': 'success', 'message': 'Sistem sedang dimatikan. Layar akan mati dalam beberapa detik.'})
+    
+    except Exception as e:
+        print(f"Gagal DBus, mencoba fallback poweroff: {e}")
+        try:
+            # Fallback metode biasa (jika privileged mode aktif penuh)
+            subprocess.run(['poweroff'], check=True)
+            return jsonify({'status': 'success', 'message': 'Sistem dimatikan (Metode 2).'})
+        except Exception as e2:
+            return jsonify({'status': 'error', 'message': f'Gagal shutdown: {str(e2)}'}), 500
 
 if __name__ == '__main__':
     # Pastikan database berjalan

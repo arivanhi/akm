@@ -1,0 +1,65 @@
+{% extends 'base.html' %} 
+{% block title %}Shutdown Sistem{% endblock %} 
+
+{% block content %}
+<div class="page-header">
+    <h1 class="page-title">Matikan Sistem</h1>
+</div>
+
+<div class="form-container" style="text-align: center; padding: 50px 20px; max-width: 600px; margin: 0 auto;">
+    
+    <div style="font-size: 5rem; color: #dc3545; margin-bottom: 20px;">
+        <i class="fas fa-power-off"></i>
+    </div>
+
+    <h2 style="margin-bottom: 15px; color: #333;">Konfirmasi Shutdown</h2>
+    <p style="color: #666; font-size: 1.1rem; margin-bottom: 40px;">
+        Apakah Anda yakin ingin mematikan alat ini?<br>
+        Pastikan semua pengukuran sudah disimpan sebelum mematikan.
+    </p>
+
+    <div style="display: flex; gap: 20px; justify-content: center;">
+        <a href="{{ url_for('dashboard') }}" class="btn-submit" style="background-color: #6c757d; text-decoration: none; min-width: 150px; display: inline-flex; align-items: center; justify-content: center;">
+            Batal
+        </a>
+
+        <button id="btnPowerOff" class="btn-submit" style="background-color: #dc3545; min-width: 150px;">
+            Ya, Matikan
+        </button>
+    </div>
+
+    <div id="shutdownStatus" style="margin-top: 30px; font-weight: bold;"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+$(document).ready(function() {
+    $('#btnPowerOff').click(function() {
+        if(!confirm("Yakin matikan sistem sekarang?")) return;
+
+        let btn = $(this);
+        // Kunci tombol agar tidak dipencet 2x
+        btn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Memproses...');
+        $('.btn-submit').addClass('disabled'); // Disable tombol batal juga
+
+        $.post('/api/system/shutdown', function(res) {
+            if(res.status === 'success') {
+                $('#shutdownStatus').html('<span style="color: #dc3545; font-size: 1.2rem;">Sistem sedang dimatikan...<br>Silakan tunggu hingga layar mati.</span>');
+                
+                // Opsional: Matikan interaksi halaman
+                setTimeout(function() {
+                    $('body').html('<div style="height:100vh; display:flex; justify-content:center; align-items:center; background:#000; color:#fff;"><h1>System Off.</h1></div>');
+                }, 3000);
+            } else {
+                alert("Gagal: " + res.message);
+                btn.prop('disabled', false).text('Ya, Matikan');
+            }
+        }).fail(function() {
+            alert("Gagal menghubungi server.");
+            btn.prop('disabled', false).text('Ya, Matikan');
+        });
+    });
+});
+</script>
+{% endblock %}
