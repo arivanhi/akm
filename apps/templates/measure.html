@@ -20,9 +20,9 @@
 			<button	button class="btn-measure" data-type="asam_urat" data-flag="2">Asam Urat</button>
 			<button class="btn-measure" data-type="cholesterol" data-flag="1">Kolesterol</button>
 			<button class="btn-measure" data-type="gula_darah" data-flag="3">Gula Darah</button>
-			<button class="btn-measure" data-type="tensi" data-flag="4">Gula Darah</button>
-			<button class="btn-measure" data-type="tinggi_badan" data-flag="5">Gula Darah</button>
-			<button class="btn-measure" data-type="berat_badan" data-flag="6">Gula Darah</button>
+			<button class="btn-measure" data-type="tensi" data-flag="4">Tensi</button>
+			<button class="btn-measure" data-type="tinggi_badan" data-flag="5">Tinggi Badan</button>
+			<button class="btn-measure" data-type="berat_badan" data-flag="6">Berat Badan</button>
 		</div>
 		<button id="btnFinishSession" class="btn-modal btn-danger" style="margin-top: 20px">Selesai Sesi</button>
 	</div>
@@ -549,12 +549,19 @@
 
         // --- LOGIKA KHUSUS BERAT & TINGGI (MANUAL INPUT SIMULASI) ---
         if (data.type === 'tinggi_badan') {
-             // Karena belum ada sensor, data ini mungkin dummy dari server
-             updateDisplay(data.type, data.value);
-             showActionButtons(data.type);
-             $("#loadingOverlay").fadeOut();
-             return;
-        }
+			const resultBox = $(`.result-box[data-type="tinggi_badan"]`);
+			
+			// Update Tampilan Tinggi Badan
+			const textTinggi = `${data.value} cm`;
+			resultBox.find(".value").text(textTinggi);
+
+			// Simpan ke sesi
+			currentSessionData.results['tinggi_badan'] = data.value;
+
+			$("#loadingOverlay").fadeOut();
+			showActionButtons('tinggi_badan');
+			return;
+		}
     });
     
     socket.on("measurement_progress", function (data) {

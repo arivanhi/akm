@@ -21,6 +21,7 @@ is_connected = False
 capture_request = False # Flag saat user minta data (angka 6)
 mqtt_client = None
 
+
 # ====================================================================
 # 1. LOGIKA MQTT (Hanya Memicu Pengambilan Data)
 # ====================================================================
@@ -129,10 +130,13 @@ async def connection_loop():
             
             if device:
                 print(f"[BLE] Timbangan ditemukan! Menghubungkan...")
+                mqtt_client.publish("akm/connect", "connected_ble_scale") 
                 
                 async with BleakClient(device, timeout=30.0) as client:
+                    mqtt_client.publish("akm/connect", "connected_ble_scale")
                     is_connected = True
                     print(f"[BLE] TERHUBUNG! Menunggu user naik...")
+                     
             
                     counter_seconds = 0
                     
@@ -147,12 +151,14 @@ async def connection_loop():
                         # Jadi loop ini akan pecah otomatis saat itu terjadi.
                     
                     print("[BLE] Timbangan putus (Layar mati/Jauh).")
+                    
             else:
                 # Tidak ketemu, coba lagi nanti
                 pass
 
         except Exception as e:
             print(f"[BLE] Error (Retrying...): {e}")
+            mqtt_client.publish("akm/connect", "disconnected_ble_scale")
             # traceback.print_exc() # Uncomment jika butuh detail
         
         # Jeda sebelum scan ulang agar tidak membebani CPU

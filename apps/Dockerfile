@@ -11,6 +11,8 @@ RUN apt-get update && apt-get install -y \
     libusb-1.0-0-dev \
     bluez \
     libglib2.0-dev \
+    network-manager \
+    wireless-tools \
     && rm -rf /var/lib/apt/lists/*
 
 # Langkah 4: Install Python dependencies

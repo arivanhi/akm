@@ -19,6 +19,7 @@ from sklearn.metrics import confusion_matrix, accuracy_score
 import joblib
 import subprocess
 from escpos.printer import Serial, Usb
+import subprocess
 
 
 # Muat environment variables dari file .env
@@ -53,6 +54,7 @@ app.secret_key = os.getenv('SECRET_KEY', os.urandom(24).hex())
 socketio = SocketIO(app, async_mode='threading')
 active_patient_id = None # Variabel global untuk melacak pasien aktif
 active_patient_name = None
+ble_is_connected = False
 print("Memuat model Machine Learning...")
 models_xgb = {}
 models_knn = {}
@@ -152,11 +154,23 @@ def on_connect(client, userdata, flags, rc):
     client.subscribe(MQTT_PREDICTION_TOPIC)
     client.subscribe(MQTT_RESULT_TOPIC)
     client.subscribe(MQTT_PROGRESS_TOPIC)
+    client.subscribe("akm/connect")
     print(f"Subscribe ke topik: {MQTT_DATA_TOPIC}, {MQTT_RESULT_TOPIC}, {MQTT_PROGRESS_TOPIC} dan {MQTT_PREDICTION_TOPIC}")
 
 def on_message(client, userdata, msg):
+    global ble_is_connected
     payload_str = msg.payload.decode('utf-8')
     print(f"Data diterima dari MQTT topik '{msg.topic}': {payload_str}")
+    
+    if msg.topic == "akm/connect":
+        if payload_str == "connected_ble_scale":
+            ble_is_connected = True
+            print("-> Status Bluetooth: TERHUBUNG (Active)")
+        else:
+            # Jika pesannya misal "disconnected" atau lainnya
+            ble_is_connected = False
+            print("-> Status Bluetooth: TERPUTUS (Inactive)")
+        return
 
     # --- KASUS 1: TERIMA DATA ARRAY UNTUK PREDIKSI ---
     if msg.topic == MQTT_PREDICTION_TOPIC:
@@ -344,6 +358,62 @@ def create_default_admin():
         print("User admin sudah ada.")
     cur.close()
     conn.close()
+
+# --- [BAGIAN 2] FUNGSI DARI ANDA (Ditempatkan sebelum routes) ---
+def get_active_api_url():
+    """Mengambil URL API Dinkes terbaru dari Database"""
+    url = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        # Menggunakan tabel system_config sesuai kode Anda
+        cur.execute("SELECT value FROM system_config WHERE key = 'api_endpoint'")
+        row = cur.fetchone()
+        if row:
+            url = row[0]
+        cur.close()
+        conn.close()
+    except Exception as e:
+        print(f"Gagal baca config DB: {e}")
+
+    # FALLBACK: Jika di DB kosong, pakai yang dari .env (bawaan)
+    if not url:
+        url = os.getenv('EXTERNAL_API_URL')
+        
+    return url
+
+# --- [BAGIAN 3] UPDATE INISIALISASI DATABASE ---
+# Panggil fungsi ini saat aplikasi start (misal di blok if __name__ == '__main__':)
+def init_tables():
+    """Membuat tabel konfigurasi dan riwayat jika belum ada"""
+    print("Memeriksa dan inisialisasi tabel database...")
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        # 1. Tabel Config (Aktif URL)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS system_config (
+                key VARCHAR(50) PRIMARY KEY,
+                value TEXT
+            );
+        """)
+
+        # 2. Tabel History (Riwayat URL) - INI YANG MEMPERBAIKI ERROR ANDA
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS api_history (
+                url TEXT PRIMARY KEY,
+                last_used TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        """)
+        
+        conn.commit()
+        cur.close()
+        conn.close()
+        print("-> Tabel database berhasil diinisialisasi.")
+    except Exception as e:
+        print(f"!!! Gagal Inisialisasi DB: {e}")
+
 
 # --- Routes & API Endpoints (Tidak Berubah) ---
 # (Semua @app.route Anda dari kode sebelumnya diletakkan di sini)
@@ -542,6 +612,169 @@ def print_receipt():
     except Exception as e:
         print(f"Error Printer: {e}")
         return jsonify({'status': 'error', 'message': 'Gagal mencetak. Cek koneksi printer.'}), 500
+    
+@app.route('/settings')
+def settings_page():
+    if g.user is None: return redirect(url_for('login'))
+    
+    conn = get_db_connection()
+    cur = conn.cursor()
+    
+    # --- [FIX UTAMA] MEMBUAT TABEL OTOMATIS SAAT HALAMAN DIBUKA ---
+    # Ini menjamin tabel pasti ada tanpa harus restart server/docker
+    try:
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS api_history (
+                url TEXT PRIMARY KEY,
+                last_used TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        """)
+        conn.commit() # Simpan perubahan struktur database
+    except Exception as e:
+        conn.rollback() # Rollback jika ada error agar tidak macet
+        print(f"Error creating table: {e}")
+    # -------------------------------------------------------------
+    
+    # 1. Ambil URL yang sedang AKTIF
+    current_url = get_active_api_url()
+    
+    # 2. Ambil RIWAYAT URL untuk dropdown
+    try:
+        cur.execute("SELECT url FROM api_history ORDER BY last_used DESC")
+        history_rows = cur.fetchall()
+        history_urls = [row[0] for row in history_rows]
+    except Exception as e:
+        # Fallback jika masih gagal, agar halaman tidak crash
+        print(f"Gagal ambil history: {e}")
+        history_urls = []
+        conn.rollback()
+    
+    cur.close()
+    conn.close()
+
+    return render_template('settings.html', current_api_url=current_url, history_urls=history_urls)
+
+@app.route('/api/settings/save_url', methods=['POST'])
+def save_api_url():
+    if g.user is None: return jsonify({'status':'error'}), 401
+    new_url = request.form.get('api_url')
+    
+    if not new_url:
+        return jsonify({'status':'error', 'message': 'URL kosong'})
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+    
+    try:
+        # 1. Simpan sebagai URL AKTIF
+        cur.execute("""
+            INSERT INTO system_config (key, value) VALUES ('api_endpoint', %s)
+            ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+        """, (new_url,))
+        
+        # 2. Simpan ke RIWAYAT (Upsert: update timestamp jika sudah ada)
+        cur.execute("""
+            INSERT INTO api_history (url) VALUES (%s)
+            ON CONFLICT (url) DO UPDATE SET last_used = CURRENT_TIMESTAMP
+        """, (new_url,))
+        
+        conn.commit()
+        return jsonify({'status': 'success', 'message': 'URL API disimpan & ditambahkan ke riwayat.'})
+    except Exception as e:
+        conn.rollback()
+        return jsonify({'status': 'error', 'message': str(e)})
+    finally:
+        cur.close()
+        conn.close()
+        
+@app.route('/api/hardware/test_print', methods=['POST'])
+def test_print_dummy():
+    if g.user is None: return jsonify({'status':'error'}), 401
+    try:
+        # Sesuaikan konfigurasi printer Anda
+        # p = Serial(devfile='/dev/rfcomm0', baudrate=9600) 
+        p = Usb(0x0416, 0x5011, 0, 0x81, 0x03) 
+        
+        p.set(align='center')
+        p.text("TEST PRINT SYSTEM\n")
+        p.text("----------------\n")
+        p.text("Printer OK.\n\n\n")
+        p.close()
+        return jsonify({'status': 'success', 'message': 'Test print berhasil.'})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': f'Error Printer: {str(e)}'}), 500
+
+@app.route('/api/hardware/bt_status')
+def bt_status():
+    global ble_is_connected
+    # Cek variabel global yang diupdate oleh MQTT
+    print(ble_is_connected)
+    if ble_is_connected:
+        print(jsonify({'status': 'active'}))
+        return jsonify({'status': 'active'})
+    else:
+        return jsonify({'status': 'inactive'})
+
+@app.route('/api/hardware/reset_bt', methods=['POST'])
+def reset_bt():
+    try:
+        # Butuh privileged mode di docker
+        subprocess.run(['service', 'bluetooth', 'restart'], check=True)
+        return jsonify({'status': 'success', 'message': 'Service Bluetooth direstart.'})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': f'Gagal: {str(e)}'})
+
+@app.route('/api/wifi/scan')
+def wifi_scan():
+    try:
+        # Menggunakan nmcli (Network Manager CLI)
+        cmd = ['nmcli', '-t', '-f', 'SSID', 'dev', 'wifi']
+        res = subprocess.run(cmd, capture_output=True, text=True)
+        # Filter baris kosong & duplikat
+        ssids = list(set([line for line in res.stdout.split('\n') if line]))
+        return jsonify({'status': 'success', 'ssids': ssids})
+    except:
+        return jsonify({'status': 'error', 'ssids': []})
+    
+@app.route('/api/wifi/ip')
+def get_network_info():
+    ip_address = 'Unknown'
+    ssid = 'Disconnected'
+    
+    try:
+        # 1. AMBIL IP ADDRESS
+        # hostname -I memberikan daftar IP, kita ambil yang pertama
+        res_ip = subprocess.check_output(['hostname', '-I']).decode('utf-8').strip()
+        if res_ip:
+            ip_address = res_ip.split(' ')[0]
+
+        # 2. AMBIL SSID YANG AKTIF
+        # nmcli -t -f ACTIVE,SSID dev wifi akan menghasilkan output seperti:
+        # no:WiFi_Tetangga
+        # yes:WiFi_Saya  <-- Kita cari yang ada 'yes'
+        res_ssid = subprocess.check_output(['nmcli', '-t', '-f', 'ACTIVE,SSID', 'dev', 'wifi']).decode('utf-8')
+        
+        for line in res_ssid.split('\n'):
+            if line.startswith('yes:'):
+                # Formatnya 'yes:NamaWifi', kita split ambil bagian keduanya
+                ssid = line.split(':')[1]
+                break
+                
+        return jsonify({'status': 'success', 'ip': ip_address, 'ssid': ssid})
+
+    except Exception as e:
+        return jsonify({'status': 'error', 'ip': '-', 'ssid': '-', 'message': str(e)})
+
+@app.route('/api/wifi/connect', methods=['POST'])
+def wifi_connect():
+    ssid = request.form.get('ssid')
+    pwd = request.form.get('password')
+    try:
+        cmd = ['nmcli', 'dev', 'wifi', 'connect', ssid, 'password', pwd]
+        subprocess.run(cmd, check=True)
+        return jsonify({'status': 'success', 'message': f'Terhubung ke {ssid}'})
+    except:
+        return jsonify({'status': 'error', 'message': 'Gagal koneksi WiFi.'})
 
 @app.route('/upload_data', methods=['POST'])
 def upload_data():
@@ -582,15 +815,18 @@ def upload_data():
         })
 
     # 3. Kirim data ke API eksternal
-    external_api_url = os.getenv('EXTERNAL_API_URL')
+    external_api_url = get_active_api_url()
     if not external_api_url:
         return jsonify({'status': 'error', 'message': 'URL API eksternal tidak diatur.'}), 500
 
     try:
+        print(f"Mengupload data ke: {external_api_url}") # Debugging
         response = requests.post(external_api_url, json=payload, timeout=30) # Timeout 30 detik
         response.raise_for_status()  # Ini akan raise error jika status code bukan 2xx
-
-        return jsonify({'status': 'success', 'message': f'Berhasil mengunggah {len(payload)} data pengukuran!'})
+        if response.status_code == 200:
+            return jsonify({'status': 'success', 'message': 'Data berhasil terkirim ke Dinkes'})
+        else:
+            return jsonify({'status': 'error', 'message': f'Gagal: {response.status_code} - {response.text}'})
 
     except requests.exceptions.RequestException as e:
         print(f"Gagal mengunggah data: {e}")
@@ -933,7 +1169,7 @@ def upload_patient_data(patient_id):
         })
 
     # Kirim ke API Eksternal
-    external_api_url = os.getenv('EXTERNAL_API_URL')
+    external_api_url = get_active_api_url()
     if not external_api_url:
         return jsonify({'status': 'error', 'message': 'URL API eksternal belum disetting di .env'}), 500
 

@@ -1,0 +1,295 @@
+{% extends 'base.html' %} 
+{% block title %}Pengaturan{% endblock %} 
+
+{% block content %}
+<div class="page-header">
+    <h1 class="page-title">Pengaturan Sistem</h1>
+</div>
+
+<div class="form-container">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 2px solid #eee; padding-bottom: 10px;">
+        <h3 style="margin: 0; border: none;">Konfigurasi Endpoint</h3>
+    </div>
+
+    <div style="background-color: #f0fff4; border: 1px solid #c3e6cb; border-left: 5px solid #28a745; padding: 15px; border-radius: 6px; margin-bottom: 25px;">
+        <div style="display: flex; align-items: start; gap: 15px;">
+            <div style="font-size: 1.5rem; color: #28a745;">
+                <i class="fas fa-satellite-dish"></i>
+            </div>
+            <div>
+                <small style="text-transform: uppercase; letter-spacing: 1px; color: #666; font-weight: 700; font-size: 0.75rem;">
+                    Endpoint Sedang Digunakan
+                </small>
+                <div style="font-family: 'Courier New', monospace; font-size: 1.1rem; font-weight: 600; color: #333; word-break: break-all; margin-top: 5px;">
+                    {% if current_api_url %}
+                        {{ current_api_url }}
+                    {% else %}
+                        <span style="color: #dc3545; font-style: italic;">(Belum ada URL yang diatur)</span>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="form-group" style="margin-bottom: 20px;">
+        <label style="font-weight: 600; margin-bottom: 8px; display: block;">Edit URL Baru</label>
+        <div style="display: flex; gap: 10px; align-items: stretch;">
+            <input type="text" id="apiUrlInput" value="{{ current_api_url }}" placeholder="https://..." style="flex: 1; padding: 10px; border: 1px solid #ccc; border-radius: 5px;">
+            <button id="btnSaveApi" class="btn-submit" style="white-space: nowrap; min-width: 100px; background-color: #007bff;">
+                <i class="fas fa-save"></i> Simpan
+            </button>
+        </div>
+    </div>
+
+    <div class="form-group" style="border-top: 1px solid #eee; padding-top: 15px;">
+        <label style="font-weight: 600; margin-bottom: 8px; display: block; color: #555;">Gunakan dari Riwayat</label>
+        <div style="display: flex; gap: 10px; align-items: stretch;">
+            <div style="flex: 1;">
+                <select id="apiHistorySelect" style="width: 100%; height: 42px; padding: 5px; border: 1px solid #ccc; border-radius: 5px; background: #f9f9f9;">
+                    <option value="">-- Pilih URL Lama --</option>
+                    {% for url in history_urls %}
+                        <option value="{{ url }}">{{ url }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <button id="btnUseHistory" class="btn-submit" style="white-space: nowrap; min-width: 100px; background-color: #17a2b8;">
+                <i class="fas fa-check"></i> Pakai
+            </button>
+        </div>
+    </div>
+</div>
+
+<div class="form-container">
+    <h3>Cek Hardware</h3>
+    <div style="display: flex; align-items: center; margin-bottom: 25px; border-bottom: 1px solid #eee; padding-bottom: 20px;">
+        <div style="width: 180px; font-weight: 600;">Test Print</div>
+        <div>
+            <button id="btnPrintDummy" class="btn-submit" style="background-color: #fff; color: #333; border: 1px solid #ccc; font-weight: 500;">Print Dummy</button>
+        </div>
+    </div>
+    <div style="display: flex; align-items: flex-start;">
+        <div style="width: 180px; font-weight: 600; padding-top: 5px;">Check Bluetooth</div>
+        <div style="display: flex; flex-direction: column; gap: 10px;">
+            <div id="btStatusBadge" style="padding: 10px 20px; border: 1px solid #ccc; background: #f8f9fa; border-radius: 5px; text-align: center; min-width: 150px; font-weight: 500;">Status: Checking...</div>
+            <button id="btnResetBt" class="btn-submit" style="background-color: #fff; color: #dc3545; border: 1px solid #dc3545; font-weight: 500;">Reset Bluetooth</button>
+        </div>
+    </div>
+</div>
+
+<div class="form-container">
+    <h3>Koneksi WiFi</h3>
+    
+    <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 20px;">
+        <button id="btnScanWifi" class="btn-submit" style="min-width: 80px; height: 45px; background-color: #6c757d; border-color: #6c757d;">
+            <i class="fas fa-sync-alt"></i> Scan
+        </button>
+        <div style="flex: 2; min-width: 180px;">
+             <select id="ssidSelect" style="width: 100%; height: 45px;">
+                <option value="">-- Tekan Scan --</option>
+             </select>
+        </div>
+        <input type="password" id="wifiPass" placeholder="Password" style="flex: 2; min-width: 150px; height: 45px;">
+        <button id="btnConnectWifi" class="btn-submit" style="flex: 1; min-width: 100px; height: 45px;">Connect</button>
+    </div>
+    
+    <div id="wifiStatusMsg" style="margin-bottom: 20px; font-weight: 500; padding-left: 10px;"></div>
+
+    <div style="border-top: 1px solid #eee; padding-top: 15px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+            
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <span style="font-size: 0.9rem; font-weight: 600; color: #555;">Current Network:</span>
+                <span id="activeSsidBadge" style="background-color: #d4edda; color: #155724; padding: 5px 12px; border-radius: 20px; font-weight: 700; font-size: 0.9rem; border: 1px solid #c3e6cb;">
+                    <i class="fas fa-wifi"></i> <span id="txtSsid">Checking...</span>
+                </span>
+            </div>
+
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <span style="font-size: 0.9rem; font-weight: 600; color: #555;">IP Address:</span>
+                <span id="ipAddressBadge" style="background-color: #cce5ff; color: #004085; padding: 5px 12px; border-radius: 20px; font-weight: 700; font-size: 0.9rem; border: 1px solid #b8daff; font-family: monospace;">
+                    <span id="txtIp">...</span>
+                </span>
+                
+                <button onclick="fetchNetworkInfo()" style="background: none; border: none; color: #6c757d; cursor: pointer; margin-left: 5px;" title="Refresh Info">
+                    <i class="fas fa-sync-alt"></i>
+                </button>
+            </div>
+
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Fungsi Ambil IP (Ditaruh diluar ready agar bisa dipanggil tombol refresh kecil)
+function fetchNetworkInfo() {
+    // Set status loading
+    $('#txtSsid').text('...');
+    $('#txtIp').text('...');
+    
+    $.get('/api/wifi/ip', function(res) {
+        if(res.status === 'success') {
+            // Update Teks
+            $('#txtIp').text(res.ip);
+            $('#txtSsid').text(res.ssid);
+
+            // Logika Warna Badge SSID
+            let badge = $('#activeSsidBadge');
+            if (res.ssid === 'Disconnected' || res.ssid === '-' || res.ssid === '') {
+                // Jika putus: Warna Merah
+                badge.css({
+                    'background-color': '#f8d7da', 
+                    'color': '#721c24', 
+                    'border-color': '#f5c6cb'
+                });
+                $('#txtSsid').text('Not Connected');
+            } else {
+                // Jika nyambung: Warna Hijau
+                badge.css({
+                    'background-color': '#d4edda', 
+                    'color': '#155724', 
+                    'border-color': '#c3e6cb'
+                });
+            }
+        } else {
+            $('#txtIp').text('Error');
+            $('#txtSsid').text('-');
+        }
+    });
+}
+
+$(document).ready(function() {
+    // 1. API: LOGIKA DROPDOWN
+    // Saat dropdown dipilih, isi nilai ke dalam input box
+    $('#btnSaveApi').click(function() {
+        let url = $('#apiUrlInput').val();
+        if(!url) return alert("URL tidak boleh kosong.");
+        
+        saveUrlToBackend(url, $(this));
+    });
+
+    // --- 2. LOGIKA TOMBOL PAKAI (RIWAYAT) ---
+    // Ketika memilih di dropdown, kita masukkan ke input box agar user lihat
+    $('#apiHistorySelect').change(function() {
+        let selectedUrl = $(this).val();
+        if(selectedUrl) $('#apiUrlInput').val(selectedUrl);
+    });
+
+    // Ketika tombol 'Pakai' ditekan, simpan URL yang terpilih di dropdown
+    $('#btnUseHistory').click(function() {
+        let url = $('#apiHistorySelect').val();
+        if(!url) return alert("Pilih URL dari riwayat terlebih dahulu.");
+        
+        // Update input box juga biar sinkron
+        $('#apiUrlInput').val(url);
+        
+        saveUrlToBackend(url, $(this));
+    });
+
+    // Fungsi Helper untuk POST ke Backend
+    function saveUrlToBackend(url, btnElement) {
+        let originalText = btnElement.html();
+        btnElement.prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Saving...');
+        
+        $.post('/api/settings/save_url', { api_url: url }, function(res) {
+            alert(res.message);
+            // Reload halaman untuk refresh dropdown riwayat (jika input manual baru)
+            location.reload(); 
+        }).fail(function() { 
+            alert("Gagal menyimpan URL."); 
+        }).always(function() { 
+            btnElement.prop('disabled', false).html(originalText); 
+        });
+    }
+
+    // 2. HARDWARE: PRINTER
+    $('#btnPrintDummy').click(function() {
+        let btn = $(this);
+        let ori = btn.html();
+        btn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Printing...');
+        $.post('/api/hardware/test_print', function(res) {
+            alert(res.message);
+        }).fail(function(e) { 
+            alert("Error: " + (e.responseJSON ? e.responseJSON.message : "Gagal print")); 
+        }).always(() => btn.prop('disabled', false).html(ori));
+    });
+
+    // 3. HARDWARE: BLUETOOTH
+    function checkBt() {
+        $.get('/api/hardware/bt_status', function(res) {
+            let badge = $('#btStatusBadge');
+            if(res.status === 'active') {
+                badge.css({'color': '#155724', 'background-color': '#d4edda', 'border-color': '#c3e6cb'}).text('Status: Connected');
+            } else {
+                badge.css({'color': '#721c24', 'background-color': '#f8d7da', 'border-color': '#f5c6cb'}).text('Status: Disconnected');
+            }
+        });
+    }
+    checkBt(); 
+    
+    $('#btnResetBt').click(function() {
+        if(!confirm("Restart service bluetooth?")) return;
+        let btn = $(this);
+        btn.prop('disabled', true).text('Resetting...');
+        
+        $.post('/api/hardware/reset_bt', function(res) {
+            alert(res.message);
+            setTimeout(checkBt, 3000);
+        }).always(() => btn.prop('disabled', false).text('Reset Bluetooth'));
+    });
+
+    fetchNetworkInfo();
+    // Logika Scan Wifi (Sama seperti sebelumnya)
+    function scanWifi() {
+        let btn = $('#btnScanWifi');
+        let select = $('#ssidSelect');
+        let originalText = btn.html();
+
+        btn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i>');
+        select.html('<option>Scanning...</option>');
+
+        $.get('/api/wifi/scan', function(res) {
+            let opts = '<option value="">-- Pilih SSID --</option>';
+            if(res.ssids && res.ssids.length > 0) {
+                res.ssids.forEach(s => opts += `<option value="${s}">${s}</option>`);
+            } else {
+                opts += '<option disabled>Tidak ada WiFi ditemukan</option>';
+            }
+            select.html(opts);
+        })
+        .fail(function() { select.html('<option>Gagal memindai</option>'); })
+        .always(function() { btn.prop('disabled', false).html(originalText); });
+    }
+
+    $('#btnScanWifi').click(function(e) { 
+        e.preventDefault(); 
+        scanWifi(); 
+    });
+    scanWifi(); // Auto scan
+
+    // Logika Connect Wifi (Sama seperti sebelumnya)
+    $('#btnConnectWifi').click(function() {
+        let ssid = $('#ssidSelect').val();
+        let pwd = $('#wifiPass').val();
+        if(!ssid) return alert("Pilih SSID terlebih dahulu.");
+        
+        let btn = $(this);
+        btn.prop('disabled', true).text('Connecting...');
+        $('#wifiStatusMsg').html('<span style="color: #856404;">Sedang menghubungkan ke ' + ssid + '...</span>');
+        
+        $.post('/api/wifi/connect', { ssid: ssid, password: pwd }, function(res) {
+            if(res.status === 'success') {
+                $('#wifiStatusMsg').html('<span style="color: #155724;">✅ Berhasil Terhubung!</span>');
+                
+                // [PENTING] Refresh Info Network setelah connect berhasil
+                setTimeout(fetchNetworkInfo, 4000); // Tunggu 4 detik agar network stabil dulu
+            } else {
+                $('#wifiStatusMsg').html('<span style="color: #721c24;">❌ Gagal Terhubung: ' + res.message + '</span>');
+            }
+        }).fail(() => $('#wifiStatusMsg').text('Error sistem.'))
+          .always(() => btn.prop('disabled', false).text('Connect'));
+    });
+});
+</script>
+{% endblock %}

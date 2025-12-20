@@ -18,7 +18,7 @@
 		<div class="wrapper">
 			<aside class="sidebar" id="sidebar">
 				<div class="sidebar-header">
-					<h3>AKM Portable</h3>
+					<h3>KOPER SAKTI</h3>
 					<button type="button" id="sidebarCollapse" class="btn btn-info">
 						<i class="fas fa-align-left"></i>
 					</button>
@@ -37,8 +37,11 @@
 					</li>
 
 					{% if g.user and g.user[2] == 'admin' %}
-					<li>
-						<a href="#"><i class="fas fa-users-cog"></i> <span>Setting User</span></a>
+					<li class="nav-item">
+						<a class="nav-link" href="{{ url_for('settings_page') }}">
+							<i class="fas fa-cogs"></i>
+							<span>Setting</span>
+						</a>
 					</li>
 					{% endif %}
 					<li>
