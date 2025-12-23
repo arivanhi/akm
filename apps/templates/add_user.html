@@ -1,0 +1,46 @@
+{% extends 'base.html' %} 
+{% block title %}Tambah Operator{% endblock %} 
+
+{% block content %}
+<div class="page-header">
+    <h1 class="page-title">Manajemen Pengguna</h1>
+</div>
+
+<div class="form-container" style="max-width: 600px; margin: 0 auto;">
+    <div style="border-bottom: 1px solid #eee; margin-bottom: 20px; padding-bottom: 10px;">
+        <h3>Tambah Operator Baru</h3>
+        <p class="text-muted">Akun ini hanya dapat melakukan pengukuran & melihat data pasien.</p>
+    </div>
+
+    <form method="POST" action="{{ url_for('add_user') }}">
+        <div class="form-group">
+            <label style="font-weight: 600;">Nama Lengkap</label>
+            <input type="text" name="nama" class="form-control" placeholder="Contoh: Petugas Jaga Pagi" required 
+                   style="width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 5px;">
+        </div>
+
+        <div class="form-group" style="margin-top: 15px;">
+            <label style="font-weight: 600;">Username Login</label>
+            <input type="text" name="username" class="form-control" placeholder="Username tanpa spasi" required 
+                   style="width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 5px;">
+        </div>
+
+        <div class="form-group" style="margin-top: 15px;">
+            <label style="font-weight: 600;">Password</label>
+            <input type="password" name="password" class="form-control" placeholder="Password akun" required 
+                   style="width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 5px;">
+        </div>
+
+        <input type="hidden" name="role" value="operator">
+
+        <div style="margin-top: 30px; display: flex; gap: 10px;">
+            <a href="{{ url_for('dashboard') }}" class="btn-submit" style="background-color: #6c757d; text-decoration: none; text-align: center; flex: 1;">
+                Kembali
+            </a>
+            <button type="submit" class="btn-submit" style="background-color: #28a745; flex: 1;">
+                <i class="fas fa-user-plus"></i> Tambah Operator
+            </button>
+        </div>
+    </form>
+</div>
+{% endblock %}

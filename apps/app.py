@@ -617,6 +617,10 @@ def print_receipt():
 def settings_page():
     if g.user is None: return redirect(url_for('login'))
     
+    if g.user[2] != 'admin': 
+        flash('Menu Pengaturan hanya untuk Admin.', 'danger')
+        return redirect(url_for('dashboard'))
+    
     conn = get_db_connection()
     cur = conn.cursor()
     
@@ -1423,6 +1427,10 @@ def export_patient(patient_id):
 def shutdown_page():
     if g.user is None: 
         return redirect(url_for('login'))
+    if g.user[2] != 'admin':
+        flash('Menu Shutdown hanya untuk Admin.', 'danger')
+        return redirect(url_for('dashboard'))
+    
     return render_template('shutdown.html')
 
 # --- API ACTION: MATIKAN KOMPUTER ---
@@ -1452,6 +1460,51 @@ def system_shutdown():
             return jsonify({'status': 'success', 'message': 'Sistem dimatikan (Metode 2).'})
         except Exception as e2:
             return jsonify({'status': 'error', 'message': f'Gagal shutdown: {str(e2)}'}), 500
+
+@app.route('/add_user', methods=['GET', 'POST'])
+def add_user():
+    # 1. Security Check
+    if g.user is None: return redirect(url_for('login'))
+    if g.user[2] != 'admin':
+        flash('Akses ditolak.', 'danger')
+        return redirect(url_for('dashboard'))
+
+    # 2. Handle Form Submit
+    if request.method == 'POST':
+        nama = request.form['nama']
+        username = request.form['username']
+        password = request.form['password']
+        # Role otomatis di-set sebagai 'operator'
+        role = 'operator' 
+        
+        # Data opsional (boleh dummy jika tidak diisi di form simple)
+        email = request.form.get('email', f"{username}@local.com")
+        no_hp = request.form.get('no_hp', '-')
+
+        # Hash Password
+        hashed = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
+
+        conn = get_db_connection()
+        cur = conn.cursor()
+        try:
+            cur.execute("""
+                INSERT INTO users (nama, username, email, no_hp, password_hash, role)
+                VALUES (%s, %s, %s, %s, %s, %s)
+            """, (nama, username, email, no_hp, hashed.decode('utf-8'), role))
+            conn.commit()
+            flash(f'Operator "{nama}" berhasil ditambahkan!', 'success')
+        except psycopg2.IntegrityError:
+            conn.rollback()
+            flash('Username sudah digunakan.', 'danger')
+        except Exception as e:
+            conn.rollback()
+            flash(f'Error: {str(e)}', 'danger')
+        finally:
+            cur.close()
+            conn.close()
+            
+    return render_template('add_user.html')
+
 
 if __name__ == '__main__':
     # Pastikan database berjalan
