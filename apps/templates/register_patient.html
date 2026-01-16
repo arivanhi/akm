@@ -1,0 +1,97 @@
+{% extends 'base.html' %} 
+{% block title %}Input Data Pasien{% endblock %} 
+
+{% block content %}
+<div class="page-header">
+    <h1 class="page-title">Pendaftaran Pasien Baru</h1>
+</div>
+
+<div class="form-container" style="max-width: 800px; margin: 0 auto;">
+    <div style="border-bottom: 1px solid #eee; margin-bottom: 20px; padding-bottom: 10px;">
+        <h3>Formulir Data Diri Pasien</h3>
+        <p class="text-muted">Masukkan data pasien dengan lengkap dan benar.</p>
+    </div>
+
+    <form method="POST" action="{{ url_for('input_pasien') }}">
+        <input type="hidden" name="source" value="{{ source if source else '' }}">
+
+        <div class="form-row">
+            <div class="form-group">
+                <label style="font-weight: 600;">Nama Lengkap <span style="color:red">*</span></label>
+                <input type="text" name="nama_pasien" class="form-control" required placeholder="Nama sesuai KTP">
+            </div>
+            <div class="form-group">
+                <label style="font-weight: 600;">NIK <span style="color:red">*</span></label>
+                <input type="number" name="nik" class="form-control" required placeholder="16 digit NIK">
+            </div>
+        </div>
+
+        <div class="form-row">
+            <div class="form-group">
+                <label style="font-weight: 600;">Tanggal Lahir <span style="color:red">*</span></label>
+                <input type="date" name="tanggal_lahir" class="form-control" required>
+                <small class="text-muted">Umur akan dihitung otomatis oleh sistem.</small>
+            </div>
+            <div class="form-group">
+                <label style="font-weight: 600;">Jenis Kelamin <span style="color:red">*</span></label>
+                <select name="jenis_kelamin" class="form-control" required>
+                    <option value="" disabled selected>-- Pilih --</option>
+                    <option value="Laki-laki">Laki-laki</option>
+                    <option value="Perempuan">Perempuan</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="form-row">
+            <div class="form-group">
+                <label style="font-weight: 600;">No. HP <span style="color:red">*</span></label>
+                <input type="text" name="no_hp" class="form-control" required placeholder="08xxx">
+            </div>
+            <div class="form-group">
+                <label style="font-weight: 600;">Email</label>
+                <input type="email" name="email" class="form-control" placeholder="contoh@email.com (Opsional)">
+            </div>
+        </div>
+
+        <div class="form-row">
+            <div class="form-group">
+                <label style="font-weight: 600;">Kecamatan (Kota Semarang) <span style="color:red">*</span></label>
+                <select name="kecamatan" class="form-control" required>
+                    <option value="" disabled selected>-- Pilih Kecamatan --</option>
+                    <option value="Banyumanik">Banyumanik</option>
+                    <option value="Candisari">Candisari</option>
+                    <option value="Gajahmungkur">Gajahmungkur</option>
+                    <option value="Gayamsari">Gayamsari</option>
+                    <option value="Genuk">Genuk</option>
+                    <option value="Gunungpati">Gunungpati</option>
+                    <option value="Mijen">Mijen</option>
+                    <option value="Ngaliyan">Ngaliyan</option>
+                    <option value="Pedurungan">Pedurungan</option>
+                    <option value="Semarang Barat">Semarang Barat</option>
+                    <option value="Semarang Selatan">Semarang Selatan</option>
+                    <option value="Semarang Tengah">Semarang Tengah</option>
+                    <option value="Semarang Timur">Semarang Timur</option>
+                    <option value="Semarang Utara">Semarang Utara</option>
+                    <option value="Tembalang">Tembalang</option>
+                    <option value="Tugu">Tugu</option>
+                    <option value="Luar Semarang">Luar Kota Semarang</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label style="font-weight: 600;">Alamat Detail <span style="color:red">*</span></label>
+                <input type="text" name="alamat" class="form-control" required placeholder="Jl. Nama Jalan, RT/RW, Kelurahan">
+            </div>
+        </div>
+
+        <div style="margin-top: 30px; display: flex; justify-content: flex-end; gap: 10px;">
+            <button type="reset" class="btn-submit" style="background-color: #6c757d;">
+                <i class="fas fa-undo"></i> Reset
+            </button>
+            
+            <button type="submit" class="btn-submit" style="background-color: #28a745; min-width: 150px;">
+                <i class="fas fa-save"></i> Simpan Data
+            </button>
+        </div>
+    </form>
+</div>
+{% endblock %}

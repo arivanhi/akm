@@ -20,6 +20,8 @@ import joblib
 import subprocess
 from escpos.printer import Serial, Usb
 import subprocess
+from dateutil.relativedelta import relativedelta # Pastikan install: pip install python-dateutil
+from datetime import date, datetime
 
 
 # Muat environment variables dari file .env
@@ -413,6 +415,24 @@ def init_tables():
         print("-> Tabel database berhasil diinisialisasi.")
     except Exception as e:
         print(f"!!! Gagal Inisialisasi DB: {e}")
+        
+# --- HELPER: HITUNG UMUR LENGKAP ---
+def calculate_age_detail(dob):
+    if not dob: return "-"
+    today = date.today()
+    # Pastikan dob adalah object date
+    if isinstance(dob, str):
+        dob = datetime.strptime(dob, '%Y-%m-%d').date()
+        
+    delta = relativedelta(today, dob)
+    return f"{delta.years} Thn {delta.months} Bln {delta.days} Hr"
+
+def calculate_age_years(dob):
+    if not dob: return 0
+    today = date.today()
+    if isinstance(dob, str):
+        dob = datetime.strptime(dob, '%Y-%m-%d').date()
+    return today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
 
 
 # --- Routes & API Endpoints (Tidak Berubah) ---
@@ -509,57 +529,106 @@ def signup():
 
     return render_template('signup.html')
 
+# --- UPDATE ROUTE MEASURE (DENGAN LOGIKA REDIRECT) ---
 @app.route('/measure', methods=('GET', 'POST'))
 def measure():
-    if g.user is None:
-        return redirect(url_for('login'))
+    if g.user is None: return redirect(url_for('login'))
     
-    if request.method == 'POST':
-        # Logika ini sekarang untuk AJAX
+    # 1. Cek apakah ada patient_id dari URL (hasil redirect input pasien)
+    patient_id = request.args.get('patient_id')
+    preselected_patient = None
 
-
-        conn = get_db_connection()
-        cur = conn.cursor()
+    if patient_id:
         try:
-    # Ambil semua data dari form
-            nama_lengkap = request.form['nama_pasien']
-            jenis_kelamin = request.form.get('jenis_kelamin')
-            alamat = request.form['alamat']
-            umur = request.form['umur']
-            nik = request.form['nik']
-            no_hp = request.form['no_hp']
-
-            # Perintah SQL dengan semua kolom dan placeholder yang benar
-            cur.execute(
-                """
-                INSERT INTO patients (nama_lengkap, jenis_kelamin, alamat, umur, nik, no_hp)
-                VALUES (%s, %s, %s, %s, %s, %s) 
-                RETURNING id, nama_lengkap, nik, alamat, umur, jenis_kelamin
-                """,
-                (nama_lengkap, jenis_kelamin, alamat, umur, nik, no_hp)
-            )
-            new_patient = cur.fetchone()
-            conn.commit()
-            return jsonify({
-                'status': 'success',
-                'message': 'Pasien baru berhasil didaftarkan!',
-                'patient': {
-                    'id': new_patient[0],
-                    'nama': new_patient[1],
-                    'nik': new_patient[2],
-                    'alamat': new_patient[3],
-                    'umur': new_patient[4],         # <-- TAMBAHAN
-                    'jenis_kelamin': new_patient[5] # <-- TAMBAHAN
-                }
-            })
-        except psycopg2.IntegrityError:
-            conn.rollback()
-            return jsonify({'status': 'error', 'message': 'NIK sudah terdaftar. Gunakan fitur pasien lama.'}), 400
-        finally:
+            conn = get_db_connection()
+            cur = conn.cursor()
+            # Ambil data lengkap pasien untuk ditampilkan otomatis
+            cur.execute("""
+                SELECT id, nama_lengkap, nik, alamat, umur, jenis_kelamin, 
+                       tanggal_lahir, email, kecamatan 
+                FROM patients WHERE id = %s
+            """, (patient_id,))
+            row = cur.fetchone()
             cur.close()
             conn.close()
 
-    return render_template('measure.html')
+            if row:
+                # Pastikan fungsi calculate_age_detail sudah ada di app.py bagian atas
+                umur_str = calculate_age_detail(row[6]) if row[6] else str(row[4])
+                
+                preselected_patient = {
+                    'id': row[0],
+                    'nama': row[1],
+                    'nik': row[2],
+                    'alamat': row[3],
+                    'umur': umur_str,
+                    'jenis_kelamin': row[5],
+                    'email': row[7],
+                    'kecamatan': row[8]
+                }
+        except Exception as e:
+            print(f"Error loading patient: {e}")
+
+    # 2. Kirim variabel 'preselected_patient' ke template (PENTING AGAR TIDAK STUCK)
+    return render_template('measure.html', preselected_patient=preselected_patient)
+
+@app.route('/input_pasien', methods=['GET', 'POST'])
+def input_pasien():
+    if g.user is None: return redirect(url_for('login'))
+    if g.user[2] not in ['admin', 'operator']:
+        flash('Akses ditolak.', 'danger')
+        return redirect(url_for('dashboard'))
+
+    # Cek 'source' dari URL (GET) atau Form (POST)
+    source = request.args.get('source') 
+
+    if request.method == 'POST':
+        source = request.form.get('source') # Ambil dari hidden input
+        try:
+            conn = get_db_connection()
+            cur = conn.cursor()
+            
+            nama = request.form['nama_pasien']
+            jk = request.form['jenis_kelamin']
+            alamat = request.form['alamat']
+            nik = request.form['nik']
+            no_hp = request.form['no_hp']
+            tgl_lahir = request.form['tanggal_lahir']
+            email = request.form['email']
+            kecamatan = request.form['kecamatan']
+            
+            # Insert dan RETURN ID (Penting!)
+            cur.execute(
+                """
+                INSERT INTO patients (nama_lengkap, jenis_kelamin, alamat, nik, no_hp, tanggal_lahir, email, kecamatan)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING id
+                """,
+                (nama, jk, alamat, nik, no_hp, tgl_lahir, email, kecamatan)
+            )
+            new_id = cur.fetchone()[0] # Ambil ID pasien baru
+            conn.commit()
+            
+            flash(f'Sukses! Pasien "{nama}" berhasil didaftarkan.', 'success')
+            
+            # LOGIKA REDIRECT:
+            # Jika source='measure', kembalikan ke halaman pengukuran dengan membawa ID
+            if source == 'measure':
+                return redirect(url_for('measure', patient_id=new_id))
+            
+        except psycopg2.IntegrityError:
+            conn.rollback()
+            flash('Gagal: NIK sudah terdaftar.', 'danger')
+        except Exception as e:
+            conn.rollback()
+            flash(f'Terjadi kesalahan: {e}', 'danger')
+        finally:
+            cur.close()
+            conn.close()
+            
+        return redirect(url_for('input_pasien'))
+
+    return render_template('register_patient.html', source=source)
 
 @app.route('/api/print_receipt', methods=['POST'])
 def print_receipt():
@@ -569,12 +638,9 @@ def print_receipt():
     data = request.json
     
     try:
-        # Koneksi ke Printer via RFCOMM0
-        # Baudrate 9600 biasanya standar untuk EPPOS
-        # p = Serial(devfile=PORT, baudrate=BAUDRATE, bytesize=8, parity='N', stopbits=1, timeout=1.00, dsrdtr=True)
-        p = Usb(0x0416, 0x5011, 0, 0x81, 0x03)
+        # p = Serial(devfile=PORT, baudrate=BAUDRATE, ...)
+        p = Usb(0x0416, 0x5011, 0, 0x81, 0x03) # Sesuaikan konfigurasi printer Anda
 
-        # --- FORMAT STRUK ---
         p.set(align='center')
         p.text("Hasil Pemeriksaan Kesehatan\n")
         p.text("================================\n")
@@ -588,23 +654,24 @@ def print_receipt():
         for res in results:
             tipe = res['tipe']
             nilai = res['nilai']
-      
-          
+            status = res.get('status', '') # Ambil status (bisa kosong untuk BB/TB)
             
             p.set(bold=True)
-            p.text(f"{tipe}: ")
+            p.text(f"{tipe}: {nilai}\n")
             p.set(bold=False)
-            p.text(f"{nilai}\n")
-          
             
+            # Hanya print status jika ada isinya
+            if status and status != '-':
+                p.text(f"Status : {status}\n")
+            
+            p.text("\n") # Spasi antar item
 
         p.set(align='center')
-        p.text("- - - - - - - - - - - - - - - - \n")
+        p.text("--------------------------------\n")
         p.text("Terima Kasih\n")
         p.text("Semoga Sehat Selalu\n")
-        p.text("\n\n\n") # Feed kertas ke bawah
+        p.text("\n\n\n") 
         
-        # PENTING: Tutup koneksi agar tidak lock
         p.close() 
 
         return jsonify({'status': 'success', 'message': 'Struk berhasil dicetak!'})
@@ -780,29 +847,107 @@ def wifi_connect():
     except:
         return jsonify({'status': 'error', 'message': 'Gagal koneksi WiFi.'})
 
+# --- [UPDATE] ROUTE UPLOAD DATA (Support Filter Lengkap) ---
 @app.route('/upload_data', methods=['POST'])
 def upload_data():
-    """Mengambil semua data pengukuran, format ke JSON, dan kirim ke server eksternal."""
+    """
+    Upload data dengan 3 mode prioritas:
+    1. By IDs (Checkbox)
+    2. By Search Query (Hasil pencarian)
+    3. By Date Range (Global)
+    """
     if g.user is None:
         return jsonify({'status': 'error', 'message': 'Akses ditolak'}), 401
     
-    # 1. Ambil semua data dari database
+    # Ambil Payload
+    req_data = request.json or {}
+    start_date = req_data.get('start_date')
+    end_date = req_data.get('end_date')
+    patient_ids = req_data.get('patient_ids') # List ID: [1, 2, 5]
+    search_query = req_data.get('search_query') # String: "Budi"
+
     conn = get_db_connection()
     cur = conn.cursor()
-    cur.execute("""
+
+    # Base Query
+    query = """
         SELECT
-            p.nama_lengkap, p.nik, p.umur, p.jenis_kelamin,
-            m.measured_at, m.cholesterol_value, m.uric_acid_value, m.blood_sugar_value
+            p.nama_lengkap, p.nik, p.jenis_kelamin, p.tanggal_lahir,
+            m.measured_at, m.cholesterol_value, m.uric_acid_value, m.blood_sugar_value,
+            m.height, m.weight, m.blood_pressure_sys, m.blood_pressure_dia
         FROM measurements m
         JOIN patients p ON m.patient_id = p.id
-        ORDER BY m.measured_at;
-    """)
+    """
+    conditions = []
+    params = []
+
+    # 1. Filter Tanggal (Selalu berlaku jika ada)
+    if start_date and end_date:
+        conditions.append("m.measured_at >= %s AND m.measured_at <= %s")
+        params.extend([start_date, end_date])
+    
+    # 2. Filter Spesifik (IDs ATAU Search)
+    if patient_ids and len(patient_ids) > 0:
+        # Mode Checkbox: Filter berdasarkan ID pasien
+        # Syntax: p.id IN (1, 2, 3)
+        placeholders = ','.join(['%s'] * len(patient_ids))
+        conditions.append(f"p.id IN ({placeholders})")
+        params.extend(patient_ids)
+        
+    elif search_query:
+        # Mode Search: Filter berdasarkan Nama/NIK
+        conditions.append("(p.nama_lengkap ILIKE %s OR p.nik ILIKE %s)")
+        params.extend([f"%{search_query}%", f"%{search_query}%"])
+
+    # Gabungkan Kondisi
+    if conditions:
+        query += " WHERE " + " AND ".join(conditions)
+    
+    query += " ORDER BY m.measured_at ASC"
+
+    cur.execute(query, tuple(params))
     all_data = cur.fetchall()
     cur.close()
     conn.close()
 
     if not all_data:
-        return jsonify({'status': 'error', 'message': 'Tidak ada data untuk diunggah.'}), 404
+        return jsonify({'status': 'warning', 'message': 'Tidak ada data ditemukan untuk kriteria ini.'}), 404
+
+    # Format Payload
+    payload = []
+    for row in all_data:
+        tgl_lahir = row[3]
+        umur_fix = calculate_age_years(tgl_lahir) # Pastikan fungsi ini ada di app.py
+
+        payload.append({
+            "nama_pasien": row[0],
+            "nik": row[1],
+            "jenis_kelamin": row[2],
+            "umur": umur_fix, 
+            "tanggal_pengukuran": row[4].isoformat(),
+            "kolesterol": row[5],
+            "asam_urat": row[6],
+            "gula_darah": row[7],
+            "tinggi_badan": row[8],
+            "berat_badan": row[9],
+            "tensi_sys": row[10],
+            "tensi_dia": row[11]
+        })
+
+    # Kirim ke API Eksternal
+    external_api_url = get_active_api_url()
+    if not external_api_url:
+        return jsonify({'status': 'error', 'message': 'URL API belum disetting.'}), 500
+
+    try:
+        print(f"Mengupload {len(payload)} data ke {external_api_url}")
+        response = requests.post(external_api_url, json=payload, timeout=30)
+        response.raise_for_status()
+        return jsonify({'status': 'success', 'message': f'Berhasil mengunggah {len(payload)} data!'})
+
+    except Exception as e:
+        print(f"Gagal upload: {e}")
+        return jsonify({'status': 'error', 'message': f'Gagal upload: {str(e)}'}), 500
 
     # 2. Konversi data ke format JSON (list of dictionaries)
     payload = []
@@ -916,229 +1061,213 @@ def handle_save_session(data):
         cur.close()
         conn.close()
 
+# --- ROUTE PENCARIAN PASIEN (FIX 404) ---
 @app.route('/api/search_patients')
 def search_patients():
-    if g.user is None:
-        return jsonify([]) # Return empty jika belum login
+    if g.user is None: 
+        return jsonify([]) # Return kosong jika belum login
 
     query = request.args.get('q', '')
     conn = get_db_connection()
     cur = conn.cursor()
-    # Cari pasien yang namanya mengandung query, limit 5 hasil
-    cur.execute(
-        "SELECT id, nama_lengkap, nik, alamat, umur, jenis_kelamin FROM patients WHERE nama_lengkap ILIKE %s LIMIT 5",
-        (f'%{query}%',)
-    )
-    patients = [{
-        'id': row[0], 'nama': row[1], 'nik': row[2], 'alamat': row[3],
-        'umur': row[4], 'jenis_kelamin': row[5] # <-- TAMBAHAN
-    } for row in cur.fetchall()]
+    
+    # Update Query: Ambil juga Email dan Kecamatan
+    cur.execute("""
+        SELECT id, nama_lengkap, nik, alamat, umur, jenis_kelamin, 
+               tanggal_lahir, email, kecamatan 
+        FROM patients 
+        WHERE nama_lengkap ILIKE %s OR nik ILIKE %s
+        LIMIT 5
+    """, (f'%{query}%', f'%{query}%'))
+    
+    rows = cur.fetchall()
     cur.close()
     conn.close()
-    return jsonify(patients)
 
+    results = []
+    for row in rows:
+        # Hitung umur dari tanggal lahir jika ada, jika tidak pakai kolom umur lama
+        umur_str = calculate_age_detail(row[6]) if row[6] else str(row[4])
+        
+        results.append({
+            'id': row[0],
+            'nama': row[1],
+            'nik': row[2],
+            'alamat': row[3],
+            'umur': umur_str,
+            'jenis_kelamin': row[5],
+            'email': row[7],      # Field baru
+            'kecamatan': row[8]   # Field baru
+        })
+        
+    return jsonify(results)
+
+# --- [UPDATE] ROUTE DATA PENGUKURAN (Support Search & Date Filter) ---
 @app.route('/data_pengukuran')
 def data_pengukuran():
-    if g.user is None:
-        return redirect(url_for('login'))
+    if g.user is None: return redirect(url_for('login'))
+
+    # 1. Ambil Parameter dari URL
+    start_date = request.args.get('start_date')
+    end_date = request.args.get('end_date')
+    search_query = request.args.get('q', '') # Parameter pencarian (nama/nik)
 
     conn = get_db_connection()
     cur = conn.cursor()
-    # Query ini menggabungkan tabel pasien dan pengukuran untuk mendapatkan
-    # nama pasien dan tanggal pengukuran TERBARU untuk setiap pasien.
-    cur.execute("""
+
+    # 2. Bangun Query Dasar
+    query = """
         SELECT p.id, p.nama_lengkap, MAX(m.measured_at) as last_measured
         FROM patients p
         JOIN measurements m ON p.id = m.patient_id
-        GROUP BY p.id, p.nama_lengkap
-        ORDER BY last_measured DESC;
-    """)
-    patients_with_dates = cur.fetchall()
-    cur.close()
-    conn.close()
-
-    return render_template('data_pengukuran.html', patients=patients_with_dates)
-
-@app.route('/api/patient_history/<int:patient_id>')
-def api_patient_history(patient_id):
-    start_date = request.args.get('start_date')
-    end_date = request.args.get('end_date')
-
-    # Query Dasar
-    query = """
-        SELECT 
-            id, 
-            measured_at, 
-            cholesterol_value, 
-            uric_acid_value, 
-            blood_sugar_value,
-            blood_pressure_sys, 
-            blood_pressure_dia, 
-            height, 
-            weight
-        FROM measurements
-        WHERE patient_id = %s
     """
-    params = [patient_id]
+    
+    # 3. Kumpulkan Kondisi Filter (WHERE clauses)
+    conditions = []
+    params = []
 
-    # Filter Tanggal (Opsional)
+    # Filter Tanggal
     if start_date and end_date:
-        query += " AND measured_at BETWEEN %s AND %s"
-        params.extend([start_date, end_date])
+        conditions.append("m.measured_at >= %s AND m.measured_at <= %s")
+        params.extend([f"{start_date} 00:00:00", f"{end_date} 23:59:59"])
     
-    query += " ORDER BY measured_at DESC"
+    # Filter Pencarian Nama / NIK
+    if search_query:
+        # ILIKE agar tidak case-sensitive (huruf besar/kecil dianggap sama)
+        conditions.append("(p.nama_lengkap ILIKE %s OR p.nik ILIKE %s)")
+        params.extend([f"%{search_query}%", f"%{search_query}%"])
 
-    conn = get_db_connection()
-    cur = conn.cursor(cursor_factory=RealDictCursor) # Gunakan RealDictCursor agar hasil jadi JSON
+    # Gabungkan kondisi dengan 'AND' jika ada filter
+    if conditions:
+        query += " WHERE " + " AND ".join(conditions)
+
+    # Grouping & Sorting
+    query += " GROUP BY p.id, p.nama_lengkap ORDER BY last_measured DESC"
+
     cur.execute(query, tuple(params))
-    history = cur.fetchall()
-    
+    patients_result = cur.fetchall()
     cur.close()
     conn.close()
 
-    # Format Tanggal agar enak dibaca di JS
-    for record in history:
-        if record['measured_at']:
-            record['formatted_date'] = record['measured_at'].strftime('%d-%m-%Y %H:%M')
-            record['raw_date'] = record['measured_at'].strftime('%Y-%m-%d') # Untuk filter JS
+    return render_template('data_pengukuran.html', 
+                         patients=patients_result,
+                         start_date=start_date,
+                         end_date=end_date,
+                         search_query=search_query) # Kirim balik kata kunci ke template
 
-    return jsonify({'status': 'success', 'data': history})
-
+# --- ROUTE API UNTUK CHART & DETAIL PASIEN ---
 @app.route('/api/patient_measurements/<int:patient_id>')
 def get_patient_measurements(patient_id):
-    if g.user is None:
-        return jsonify({'error': 'Unauthorized'}), 401
-
-    # Ambil parameter filter dari URL
-    start_date = request.args.get('start_date')
-    end_date = request.args.get('end_date')
+    if g.user is None: 
+        return jsonify({'status': 'error', 'message': 'Unauthorized'}), 401
 
     conn = get_db_connection()
     cur = conn.cursor()
 
-    # ==========================================
-    # 1. AMBIL BIODATA
-    # ==========================================
-    query_bio = "SELECT nama_lengkap, umur, jenis_kelamin, alamat, nik, no_hp FROM patients WHERE id = %s"
-    cur.execute(query_bio, (patient_id,))
-    patient_data = cur.fetchone()
-    
-    biodata = {
-        'nama': patient_data[0], 
-        'umur': patient_data[1], 
-        'jenis_kelamin': patient_data[2],
-        'alamat': patient_data[3], 
-        'nik': patient_data[4], 
-        'no_hp': patient_data[5]
-    } if patient_data else {}
+    # 1. Ambil Biodata (Sekarang ambil tanggal_lahir)
+    cur.execute("""
+        SELECT nama_lengkap, nik, jenis_kelamin, alamat, tanggal_lahir, no_hp, email, kecamatan, umur 
+        FROM patients WHERE id = %s
+    """, (patient_id,))
+    p_row = cur.fetchone()
 
-    # ==========================================
-    # 2. DATA UNTUK GRAFIK (Chart)
-    # ==========================================
-    # Mengambil data: Tanggal, Kolesterol, Asam Urat, Gula
-    # Urutan: ASC (Lama ke Baru)
-    # Catatan: Pastikan nama kolom tanggal di DB Anda 'measurement_date' atau 'measured_at' (sesuaikan)
-    query_chart = """
-        SELECT measured_at, cholesterol_value, uric_acid_value, blood_sugar_value
+    if not p_row:
+        cur.close(); conn.close()
+        return jsonify({'status': 'error', 'message': 'Pasien tidak ditemukan'}), 404
+
+    # --- FIX: Hitung Umur Dinamis ---
+    # Prioritas: Hitung dari tanggal_lahir. Jika kosong, pakai kolom umur lama.
+    tgl_lahir = p_row[4]
+    if tgl_lahir:
+        # Gunakan fungsi helper yang sudah kita buat (calculate_age_detail untuk string lengkap "X Thn Y Bln")
+        # Atau calculate_age_years untuk angka saja. 
+        # Untuk tampilan detail, biasanya lebih bagus format lengkap:
+        umur_display = calculate_age_detail(tgl_lahir) 
+    else:
+        # Fallback ke kolom umur lama jika tanggal lahir belum diset
+        umur_display = f"{p_row[8]} Tahun" if p_row[8] else "-"
+
+    biodata = {
+        'nama': p_row[0],
+        'nik': p_row[1],
+        'jenis_kelamin': p_row[2],
+        'alamat': p_row[3],
+        'umur': umur_display, # <--- INI SUDAH TERISI HASIL HITUNGAN
+        'no_hp': p_row[5],
+        'email': p_row[6],
+        'kecamatan': p_row[7]
+    }
+
+    # 2. Ambil History Pengukuran (Filter Tanggal jika ada)
+    start_date = request.args.get('start_date')
+    end_date = request.args.get('end_date')
+    
+    q_history = """
+        SELECT measured_at, cholesterol_value, uric_acid_value, blood_sugar_value, 
+               blood_pressure_sys, blood_pressure_dia, height, weight
         FROM measurements
         WHERE patient_id = %s
     """
     params = [patient_id]
-
-    if start_date and end_date:
-        query_chart += " AND measured_at >= %s AND measured_at <= %s"
-        params.extend([start_date, end_date])
     
-    query_chart += " ORDER BY measured_at ASC"
-
-    cur.execute(query_chart, tuple(params))
-    measurements_asc = cur.fetchall()
-
-    chart_data = {
-        'labels': [],
-        'cholesterol': [],
-        'uric_acid': [],
-        'blood_sugar': [],
-    }
-
-    for m in measurements_asc:
-        # m[0] = tanggal, m[1] = kol, m[2] = au, m[3] = gula
-        tgl_str = m[0].strftime('%d-%m %H:%M') if m[0] else '-'
-        chart_data['labels'].append(tgl_str)
-        chart_data['cholesterol'].append(m[1])
-        chart_data['uric_acid'].append(m[2])
-        chart_data['blood_sugar'].append(m[3])
-
-    # ==========================================
-    # 3. DATA UNTUK TABEL RIWAYAT (History)
-    # ==========================================
-    # Mengambil SEMUA data termasuk Tensi, Tinggi, Berat
-    # Urutan: DESC (Baru ke Lama) agar tabel menampilkan data terbaru di atas
-    query_history = """
-        SELECT 
-            measured_at, 
-            cholesterol_value, 
-            uric_acid_value, 
-            blood_sugar_value,
-            blood_pressure_sys, 
-            blood_pressure_dia, 
-            height, 
-            weight
-        FROM measurements
-        WHERE patient_id = %s
-    """
-    # Gunakan params yang sama (tapi kita buat list baru agar aman)
-    params_hist = [patient_id]
     if start_date and end_date:
-        query_history += " AND measured_at >= %s AND measured_at <= %s"
-        params_hist.extend([start_date, end_date])
-
-    query_history += " ORDER BY measured_at DESC"
-
-    cur.execute(query_history, tuple(params_hist))
-    measurements_desc = cur.fetchall()
-
-    history_list = []
-    for row in measurements_desc:
-        # Kita map manual tuple ke dictionary agar JavaScript bisa membacanya
-        # row[0]=Date, [1]=Kol, [2]=AU, [3]=Gula, [4]=Sys, [5]=Dia, [6]=Height, [7]=Weight
-        history_list.append({
-            'measured_at': row[0], # Objek date asli
-            'formatted_date': row[0].strftime('%d-%m-%Y %H:%M') if row[0] else '-',
-            'cholesterol_value': row[1],
-            'uric_acid_value': row[2],
-            'blood_sugar_value': row[3],
-            'blood_pressure_sys': row[4],
-            'blood_pressure_dia': row[5],
-            'height': row[6],
-            'weight': row[7]
+        q_history += " AND measured_at >= %s AND measured_at <= %s"
+        params.extend([start_date, end_date])
+        
+    q_history += " ORDER BY measured_at ASC"
+    
+    cur.execute(q_history, tuple(params))
+    rows = cur.fetchall()
+    
+    # ... (Bagian memproses history dan chart tetap sama) ...
+    history = []
+    chart_data = {'labels': [], 'cholesterol': [], 'uric_acid': [], 'blood_sugar': []}
+    
+    for r in rows:
+        dt = r[0]
+        fmt_date = dt.strftime('%d-%m-%Y %H:%M')
+        
+        history.append({
+            'formatted_date': fmt_date,
+            'cholesterol_value': r[1],
+            'uric_acid_value': r[2],
+            'blood_sugar_value': r[3],
+            'blood_pressure_sys': r[4],
+            'blood_pressure_dia': r[5],
+            'height': r[6],
+            'weight': r[7]
         })
+        
+        # Isi Chart (Hanya jika nilainya > 0 agar grafik rapi)
+        chart_data['labels'].append(dt.strftime('%d/%m'))
+        chart_data['cholesterol'].append(r[1] if r[1] > 0 else None)
+        chart_data['uric_acid'].append(r[2] if r[2] > 0 else None)
+        chart_data['blood_sugar'].append(r[3] if r[3] > 0 else None)
 
     cur.close()
     conn.close()
 
     return jsonify({
-        'biodata': biodata, 
-        'chart_data': chart_data,
-        'history': history_list  # <--- Data ini yang akan masuk ke tabel
+        'biodata': biodata,
+        'history': history,
+        'chart_data': chart_data
     })
 
 
 @app.route('/upload_patient_data/<int:patient_id>', methods=['POST'])
 def upload_patient_data(patient_id):
-    """Mengupload data pasien spesifik (bisa difilter tanggal)."""
     if g.user is None: return jsonify({'status': 'error', 'message': 'Akses ditolak'}), 401
     
-    # Ambil filter tanggal dari JSON body
-    data = request.json
+    data = request.json or {}
     start_date = data.get('start_date')
     end_date = data.get('end_date')
 
     conn = get_db_connection()
     cur = conn.cursor()
     
+    # --- UPDATE QUERY: Ambil p.tanggal_lahir ---
     query = """
-        SELECT p.nama_lengkap, p.nik, p.umur, p.jenis_kelamin,
+        SELECT p.nama_lengkap, p.nik, p.jenis_kelamin, p.tanggal_lahir,
                m.measured_at, m.cholesterol_value, m.uric_acid_value, m.blood_sugar_value, 
                m.blood_pressure_sys, m.blood_pressure_dia, m.height, m.weight
         FROM measurements m
@@ -1161,69 +1290,38 @@ def upload_patient_data(patient_id):
     if not rows:
         return jsonify({'status': 'warning', 'message': 'Tidak ada data pada rentang waktu ini.'})
 
-    # Format ke JSON
     payload = []
     for row in rows:
+        # Hitung Umur dari Tanggal Lahir (row[3])
+        tanggal_lahir = row[3]
+        umur_fix = calculate_age_years(tanggal_lahir)
+
         payload.append({
-            "nama_pasien": row[0], "nik": row[1], "umur": row[2], "jenis_kelamin": row[3],
+            "nama_pasien": row[0],
+            "nik": row[1],
+            "jenis_kelamin": row[2],
+            "umur": umur_fix, # <--- INI SUDAH TERISI ANGKA
             "tanggal_pengukuran": row[4].isoformat(),
-            "kolesterol": row[5], "asam_urat": row[6], "gula_darah": row[7],
-            "tensi_sys": row[8], "tensi_dia": row[9],
-            "tinggi_badan": row[10], "berat_badan": row[11]
+            "kolesterol": row[5],
+            "asam_urat": row[6],
+            "gula_darah": row[7],
+            "tensi_sys": row[8],
+            "tensi_dia": row[9],
+            "tinggi_badan": row[10],
+            "berat_badan": row[11]
         })
 
-    # 1. Ambil URL (Pastikan fungsi get_active_api_url sudah ada di file app.py Anda)
     external_api_url = get_active_api_url()
     
     if not external_api_url:
-        return jsonify({'status': 'error', 'message': 'URL API belum disetting di menu Pengaturan.'}), 500
+        return jsonify({'status': 'error', 'message': 'URL API belum disetting.'}), 500
 
-    # 2. EKSEKUSI PENGIRIMAN DATA (Uncomment bagian ini)
     try:
-        # Debugging: Print apa yang dikirim
-        print(f"Mengirim {len(payload)} data ke: {external_api_url}")
-        
-        # --- BARIS PENTING YANG SEBELUMNYA MATI ---
         response = requests.post(external_api_url, json=payload, timeout=30)
-        response.raise_for_status() # Akan error jika status code bukan 200 OK
-        # ------------------------------------------
-
+        response.raise_for_status()
         return jsonify({'status': 'success', 'message': f'Berhasil mengunggah {len(payload)} data pasien ini!'})
-    
-    except requests.exceptions.RequestException as e:
-        # Tangkap error koneksi atau error dari server tujuan
-        print(f"Error Upload: {e}")
-        return jsonify({'status': 'error', 'message': f'Gagal koneksi ke server: {str(e)}'}), 500
     except Exception as e:
-        print(f"Error Lain: {e}")
-        return jsonify({'status': 'error', 'message': f'Terjadi kesalahan: {str(e)}'}), 500
-
-@app.route('/api/patient/<int:patient_id>')
-def get_patient_detail(patient_id):
-    """API untuk mengambil data detail satu pasien."""
-    if g.user is None:
-        return jsonify({'error': 'Unauthorized'}), 401
-    
-    conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT id, nama_lengkap, jenis_kelamin, alamat, umur, nik, no_hp FROM patients WHERE id = %s", (patient_id,))
-    patient_data = cur.fetchone()
-    cur.close()
-    conn.close()
-
-    if patient_data is None:
-        return jsonify({'error': 'Patient not found'}), 404
-
-    patient_dict = {
-        'id': patient_data[0],
-        'nama_lengkap': patient_data[1],
-        'jenis_kelamin': patient_data[2],
-        'alamat': patient_data[3],
-        'umur': patient_data[4],
-        'nik': patient_data[5],
-        'no_hp': patient_data[6]
-    }
-    return jsonify(patient_dict)
+        return jsonify({'status': 'error', 'message': f'Gagal upload: {str(e)}'}), 500
 
 @app.route('/patient/edit/<int:patient_id>', methods=['POST'])
 def edit_patient(patient_id):

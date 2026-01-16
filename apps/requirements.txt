@@ -13,3 +13,4 @@ python-escpos
 pyserial
 pyusb
 bleak
+python-dateutil

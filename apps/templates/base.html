@@ -27,20 +27,23 @@
 					<li>
 						<a href="{{ url_for('dashboard') }}"><i class="fas fa-home"></i> <span>Home</span></a>
 					</li>
+
 					<li>
-						<a href="{{ url_for('measure') }}"><i class="fas fa-heartbeat"></i> <span>Mengukur</span></a>
-					</li>
-					<li>
-						<a href="{{ url_for('data_pengukuran') }}"><i class="fas fa-chart-line"></i> <span>Data Pengukuran</span></a>
+						<a href="{{ url_for('input_pasien') }}"><i class="fas fa-user-plus"></i> <span>Input Pasien</span></a>
 					</li>
 
 					{% if g.user and g.user[2] == 'admin' %}
-		
 						<li>
-							<a href="{{ url_for('add_user') }}"><i class="fas fa-users-cog"></i> <span>Tambah Operator</span></a>
+							<a href="{{ url_for('measure') }}"><i class="fas fa-heartbeat"></i> <span>Mengukur</span></a>
 						</li>
 						<li>
-							<a href="{{ url_for('settings_page') }}"><i class="fas fa-cogs"></i> <span>Pengaturan Sistem</span></a>
+							<a href="{{ url_for('data_pengukuran') }}"><i class="fas fa-chart-line"></i> <span>Data Pengukuran</span></a>
+						</li>
+						<li>
+							<a href="{{ url_for('add_user') }}"><i class="fas fa-users-cog"></i> <span>Tambah User</span></a>
+						</li>
+						<li>
+							<a href="{{ url_for('settings_page') }}"><i class="fas fa-cogs"></i> <span>Pengaturan</span></a>
 						</li>
 						<li>
 							<a href="{{ url_for('shutdown_page') }}"><i class="fas fa-power-off" style="color: #ff9999;"></i> <span>Shutdown</span></a>
