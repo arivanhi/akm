@@ -21,7 +21,7 @@ import subprocess
 from escpos.printer import Serial, Usb
 import subprocess
 from dateutil.relativedelta import relativedelta # Pastikan install: pip install python-dateutil
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 
 # Muat environment variables dari file .env
@@ -899,6 +899,8 @@ def upload_data():
     for row in all_data:
         tgl_lahir = row[3]
         umur_fix = calculate_age_detail(tgl_lahir) # Pastikan fungsi ini ada di app.py
+        waktu_utc = row[7]
+        waktu_wib = waktu_utc + timedelta(hours=7)
 
         payload.append({
             "nama_pasien": row[0],
@@ -908,7 +910,7 @@ def upload_data():
             "kecamatan": row[5],
             "kelurahan": row[4],
             "alamat": row[6],
-            "tanggal_pengukuran": row[7].isoformat(),
+            "tanggal_pengukuran": waktu_wib.isoformat(),
             "kolesterol": row[8],
             "asam_urat": row[9],
             "gula_darah": row[10],
@@ -1261,6 +1263,8 @@ def upload_patient_data(patient_id):
         # Hitung Umur dari Tanggal Lahir (row[3])
         tanggal_lahir = row[3]
         umur_fix = calculate_age_detail(tanggal_lahir)
+        waktu_utc = row[7]
+        waktu_wib = waktu_utc + timedelta(hours=7)
 
         payload.append({
             "nama_pasien": row[0],
@@ -1270,7 +1274,7 @@ def upload_patient_data(patient_id):
             "kecamatan": row[5],
             "kelurahan": row[4],
             "alamat": row[6],
-            "tanggal_pengukuran": row[7].isoformat(),
+            "tanggal_pengukuran": waktu_wib.isoformat(),
             "kolesterol": row[8],
             "asam_urat": row[9],
             "gula_darah": row[10],
