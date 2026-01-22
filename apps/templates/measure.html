@@ -69,7 +69,7 @@
                 </div>
                 <div>
                     <p><strong>Gender:</strong> <span id="detail_jenis_kelamin"></span></p>
-                    <p><strong>Kecamatan:</strong> <span id="detail_kecamatan"></span></p>
+                    <p><strong>Kecamatan:</strong> <span id="detail_kecamatan"></span>, Kelurahan: <span id="detail_kelurahan"></span></p>
                     <p><strong>Email:</strong> <span id="detail_email"></span></p>
                 </div>
             </div>
@@ -198,6 +198,7 @@
             $("#detail_jenis_kelamin").text(patient.jenis_kelamin);
             if(patient.email) $("#detail_email").text(patient.email);
             if(patient.kecamatan) $("#detail_kecamatan").text(patient.kecamatan);
+            $("#detail_kelurahan").text(patient.kelurahan || '-');
 
             $("#measurementControl").show();
             $('#btnStartSession').show();

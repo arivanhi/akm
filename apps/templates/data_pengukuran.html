@@ -131,12 +131,42 @@
 
     <div id="biodataContainer" class="form-container" style="margin-bottom: 25px;">
         <h3>Biodata Pasien</h3>
+        
+        <div class="form-row" style="display: flex; gap: 20px; margin-bottom: 15px;">
+            <div class="form-group" style="flex: 1;">
+                <p style="margin: 0; color: #666; font-size: 0.9rem;">Nama Lengkap</p>
+                <p style="margin: 0; font-weight: bold; font-size: 1.1rem;"><span id="bio_nama">-</span></p>
+            </div>
+            <div class="form-group" style="flex: 1;">
+                <p style="margin: 0; color: #666; font-size: 0.9rem;">NIK</p>
+                <p style="margin: 0; font-weight: bold; font-size: 1.1rem;"><span id="bio_nik">-</span></p>
+            </div>
+            <div class="form-group" style="flex: 1;">
+                <p style="margin: 0; color: #666; font-size: 0.9rem;">Jenis Kelamin</p>
+                <p style="margin: 0; font-weight: bold; font-size: 1.1rem;"><span id="bio_jenis_kelamin">-</span></p>
+            </div>
+        </div>
+
+        <div class="form-row" style="display: flex; gap: 20px; margin-bottom: 15px;">
+            <div class="form-group" style="flex: 1;">
+                <p style="margin: 0; color: #666; font-size: 0.9rem;">Umur</p>
+                <p style="margin: 0; font-weight: bold;"><span id="bio_umur">-</span></p>
+            </div>
+            <div class="form-group" style="flex: 1;">
+                <p style="margin: 0; color: #666; font-size: 0.9rem;">Kecamatan</p>
+                <p style="margin: 0; font-weight: bold;"><span id="bio_kecamatan">-</span></p>
+            </div>
+            <div class="form-group" style="flex: 1;">
+                <p style="margin: 0; color: #666; font-size: 0.9rem;">Kelurahan</p>
+                <p style="margin: 0; font-weight: bold;"><span id="bio_kelurahan">-</span></p>
+            </div>
+        </div>
+
         <div class="form-row">
-            <div class="form-group"><p><strong>Nama:</strong> <span id="bio_nama"></span></p></div>
-            <div class="form-group"><p><strong>NIK:</strong> <span id="bio_nik"></span></p></div>
-            <div class="form-group"><p><strong>Umur:</strong> <span id="bio_umur"></span></p></div>
-            <div class="form-group"><p><strong>Gender:</strong> <span id="bio_jenis_kelamin"></span></p></div>
-            <div class="form-group"><p><strong>Alamat:</strong> <span id="bio_alamat"></span></p></div>
+            <div class="form-group" style="flex: 1; border-top: 1px solid #eee; padding-top: 10px;">
+                <p style="margin: 0; color: #666; font-size: 0.9rem;">Alamat Lengkap</p>
+                <p style="margin: 0; font-weight: bold;"><span id="bio_alamat">-</span></p>
+            </div>
         </div>
     </div>
 
@@ -333,6 +363,8 @@
                 $('#bio_umur').text(bio.umur);
                 $('#bio_jenis_kelamin').text(bio.jenis_kelamin);
                 $('#bio_alamat').text(bio.alamat);
+                $('#bio_kecamatan').text(bio.kecamatan || '-');
+                $('#bio_kelurahan').text(bio.kelurahan || '-');
 
                 // 2. Render Tabel History (Fungsi Baru)
                 if (data.history) {
