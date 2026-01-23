@@ -1,86 +1,94 @@
 import asyncio
-import json
 import time
-import traceback
 import paho.mqtt.client as mqtt
 from bleak import BleakClient, BleakScanner
 
-# --- KONFIGURASI ---
+# ====================================================================
+# KONFIGURASI MQTT (Sesuai Node-RED)
+# ====================================================================
 MQTT_BROKER = "localhost"
 MQTT_PORT = 1883
-MQTT_CMD_TOPIC = "akm/command"
-MQTT_DATA_TOPIC = "akm/prediction_data"
+MQTT_CMD_TOPIC = "akm/command"      # Node-RED kirim perintah kesini (5 atau 6)
+MQTT_DATA_TOPIC = "akm/sensor_raw"  # Python kirim data kesini (format: tipe:nilai)
+MQTT_STATUS_TOPIC = "akm/connect"   # Status koneksi alat
 
-TARGET_SCALE_ADDRESS = "d8:e7:2f:0a:94:44" # MAC Address Timbangan
-BODY_COMPOSITION_UUID = "00002a9c-0000-1000-8000-00805f9b34fb"
+# ====================================================================
+# KONFIGURASI PERANGKAT BLE
+# ====================================================================
+# 1. TIMBANGAN (Weight Scale) - Xiaomi / Generic
+WEIGHT_ADDRESS = "d8:e7:2f:0a:94:44" 
+WEIGHT_UUID = "00002a9c-0000-1000-8000-00805f9b34fb"
 
-# --- STATE GLOBAL ---
-latest_weight = 0.0
-is_stable = False
-is_connected = False
-capture_request = False # Flag saat user minta data (angka 6)
+# 2. PENGUKUR TINGGI (Height Scale) - ESP32
+HEIGHT_NAME = "bleScaleHeight"
+HEIGHT_CHAR_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8"
+
+# ====================================================================
+# GLOBAL STATE
+# ====================================================================
 mqtt_client = None
 
+# State Berat Badan
+weight_state = {
+    "latest": 0.0,
+    "stable": False,
+    "connected": False,
+    "capture_request": False  # Flag aktif jika terima command '6'
+}
+
+# State Tinggi Badan
+height_state = {
+    "latest": 0.0,
+    "connected": False,
+    "capture_request": False  # Flag aktif jika terima command '5'
+}
 
 # ====================================================================
-# 1. LOGIKA MQTT (Hanya Memicu Pengambilan Data)
+# 1. LOGIKA MQTT (Handled by Node-RED Logic)
 # ====================================================================
 def on_connect(client, userdata, flags, rc):
-    print(f"[MQTT] Terhubung ke Broker. Siap menerima perintah.")
+    print(f"[MQTT] Terhubung ke Broker. Siap menerima perintah dari Node-RED.")
     client.subscribe(MQTT_CMD_TOPIC)
 
 def on_message(client, userdata, msg):
-    global capture_request, latest_weight, is_stable, is_connected
-    
     try:
-        payload = msg.payload.decode("utf-8")
-        # Jika perintah '6' diterima
-        if payload.strip() == "6":
-            print(f"[COMMAND] Permintaan ambil data berat badan diterima.")
-            
-            # Cek status koneksi saat ini
-            if not is_connected:
-                print("[ERROR] Timbangan belum terhubung! Injak timbangan dulu.")
-                # Opsional: Bisa kirim feedback error ke web lewat MQTT jika mau
+        payload = msg.payload.decode("utf-8").strip()
+        
+        # --- COMMAND '6': AMBIL BERAT BADAN ---
+        if payload == "6":
+            print(f"[COMMAND] Node-RED meminta Berat Badan (6).")
+            if not weight_state["connected"]:
+                print("[WARNING] Timbangan belum terhubung.")
                 return
             
-            time.sleep(3)
-
-            if is_stable and latest_weight > 0:
-                # KASUS 1: Data sudah ada dan stabil (Langsung kirim)
-                send_data_to_web(latest_weight)
+            # Jika data sudah stabil saat ini, langsung kirim
+            if weight_state["stable"] and weight_state["latest"] > 0:
+                publish_data("berat_badan", weight_state["latest"])
+                weight_state["capture_request"] = False
             else:
-                # KASUS 2: Terhubung, tapi belum stabil (Set flag, tunggu stabil)
+                # Jika belum stabil, set flag tunggu
                 print("[INFO] Menunggu timbangan stabil...")
-                capture_request = True 
+                weight_state["capture_request"] = True
+
+        # --- COMMAND '5': AMBIL TINGGI BADAN ---
+        elif payload == "5":
+            print(f"[COMMAND] Node-RED meminta Tinggi Badan (5).")
+            # Set flag, tunggu data masuk dari sensor
+            height_state["capture_request"] = True
 
     except Exception as e:
         print(f"[MQTT] Error: {e}")
 
-def send_data_to_web(weight):
-    global mqtt_client, capture_request
-    
-    # payload = json.dumps({
-    #     "type": "berat_badan",
-    #     "value": round(weight, 2)
-    # })
-    # mqtt_client.publish(MQTT_DATA_TOPIC, payload)
-    # print(f"[SUCCESS] Data {weight} kg dikirim ke Web!")
-    
-    # # Reset flag permintaan
-    # capture_request = False
-    payload_str = f"berat_badan:{round(weight, 2)}"
-    mqtt_client.publish("akm/sensor_raw", payload_str) 
-    
-    print(f"[SUCCESS] Data dikirim ke Node-RED: {payload_str}")
-    
-    # Reset flag permintaan
-    capture_request = False
+def publish_data(tipe, nilai):
+    """Kirim data ke Node-RED via MQTT"""
+    payload_str = f"{tipe}:{round(nilai, 2)}"
+    mqtt_client.publish(MQTT_DATA_TOPIC, payload_str)
+    print(f"[SUCCESS] Dikirim ke Node-RED: {payload_str}")
 
 # ====================================================================
-# 2. LOGIKA BLE (Auto Connect & Listen)
+# 2. TASK TIMBANGAN (Weight Scale)
 # ====================================================================
-def parse_data(data: bytearray):
+def parse_weight_data(data: bytearray):
     if len(data) < 13: return None
     
     ctrl_byte = data[0]
@@ -97,80 +105,97 @@ def parse_data(data: bytearray):
 
     return {"val": kg, "stable": stable}
 
-def notification_handler(sender, data):
-    global latest_weight, is_stable, capture_request
-    
-    res = parse_data(data)
+def weight_notification_handler(sender, data):
+    res = parse_weight_data(data)
     if not res: return
 
-    latest_weight = res['val']
-    is_stable = res['stable']
+    weight_state["latest"] = res['val']
+    weight_state["stable"] = res['stable']
 
-    # Log ringan biar tidak spam (opsional)
-    # print(f"Berat: {latest_weight} kg | Stabil: {is_stable}")
+    # LOGIKA PENGIRIMAN:
+    # Hanya kirim jika Node-RED meminta (flag=True) DAN data stabil
+    if weight_state["capture_request"] and weight_state["stable"] and weight_state["latest"] > 0:
+        publish_data("berat_badan", weight_state["latest"])
+        weight_state["capture_request"] = False # Reset permintaan
 
-    # LOGIKA PENTING:
-    # Jika user SUDAH minta (flag 6 aktif) DAN data SEKARANG stabil
-    if capture_request and is_stable and latest_weight > 0:
-        send_data_to_web(latest_weight)
-
-async def connection_loop():
-    global is_connected, latest_weight, is_stable
-    
-    print("--- MEMULAI SERVICE AUTO-CONNECT ---")
-    
+async def run_weight_scale():
+    print("--- Service Timbangan (Weight) Dimulai ---")
     while True:
-        is_connected = False
-        is_stable = False
-        
-        print(f"[BLE] Mencari timbangan ({TARGET_SCALE_ADDRESS})...")
+        weight_state["connected"] = False
         try:
-            # Scan dulu untuk memastikan perangkat ada dalam jangkauan (agar tidak error saat connect)
-            device = await BleakScanner.find_device_by_address(TARGET_SCALE_ADDRESS, timeout=5.0)
-            
+            device = await BleakScanner.find_device_by_address(WEIGHT_ADDRESS, timeout=5.0)
             if device:
-                print(f"[BLE] Timbangan ditemukan! Menghubungkan...")
-                mqtt_client.publish("akm/connect", "connected_ble_scale") 
-                
+                print("[WEIGHT] Timbangan ditemukan! Menghubungkan...")
                 async with BleakClient(device, timeout=30.0) as client:
-                    mqtt_client.publish("akm/connect", "connected_ble_scale")
-                    is_connected = True
-                    print(f"[BLE] TERHUBUNG! Menunggu user naik...")
-                     
-            
-                    counter_seconds = 0
+                    mqtt_client.publish(MQTT_STATUS_TOPIC, "connected_ble_scale")
+                    weight_state["connected"] = True
+                    print("[WEIGHT] TERHUBUNG!")
                     
-                    await client.start_notify(BODY_COMPOSITION_UUID, notification_handler)
+                    await client.start_notify(WEIGHT_UUID, weight_notification_handler)
                     
-                    # Loop untuk menjaga koneksi tetap hidup selama timbangan menyala
                     while client.is_connected:
                         await asyncio.sleep(1)
-                        counter_seconds += 1
-                        print(f"[BLE] Terhubung: {counter_seconds} detik", end='\r') # end='\r' agar log satu baris (opsional)
-                        # Timbangan Xiaomi otomatis putus koneksi jika layar mati (hemat baterai)
-                        # Jadi loop ini akan pecah otomatis saat itu terjadi.
-                    
-                    print("[BLE] Timbangan putus (Layar mati/Jauh).")
-                    
+                    print("[WEIGHT] Putus.")
             else:
-                # Tidak ketemu, coba lagi nanti
-                pass
-
+                pass 
         except Exception as e:
-            print(f"[BLE] Error (Retrying...): {e}")
-            mqtt_client.publish("akm/connect", "disconnected_ble_scale")
-            # traceback.print_exc() # Uncomment jika butuh detail
+            print(f"[WEIGHT] Error: {e}")
+            mqtt_client.publish(MQTT_STATUS_TOPIC, "disconnected_ble_scale")
         
-        # Jeda sebelum scan ulang agar tidak membebani CPU
         await asyncio.sleep(2)
 
 # ====================================================================
-# 3. MAIN
+# 3. TASK TINGGI BADAN (Height Scale)
+# ====================================================================
+def height_notification_handler(sender, data):
+    try:
+        # Decode data dari ESP32 (String UTF-8)
+        received_string = data.decode('utf-8').strip()
+        val = float(received_string)
+        
+        height_state["latest"] = val
+        # print(f"[HEIGHT DEBUG] {val} cm") # Uncomment untuk lihat raw stream
+
+        # LOGIKA PENGIRIMAN:
+        # Jika Node-RED minta (flag=True), langsung kirim nilai terbaru
+        if height_state["capture_request"]:
+            publish_data("tinggi_badan", val)
+            height_state["capture_request"] = False # Reset permintaan
+
+    except Exception as e:
+        print(f"[HEIGHT] Error decode: {e}")
+
+async def run_height_scale():
+    print("--- Service Tinggi Badan (Height) Dimulai ---")
+    while True:
+        height_state["connected"] = False
+        try:
+            device = await BleakScanner.find_device_by_name(HEIGHT_NAME, timeout=5.0)
+            if device:
+                print("[HEIGHT] Alat Tinggi ditemukan! Menghubungkan...")
+                async with BleakClient(device) as client:
+                    height_state["connected"] = True
+                    print("[HEIGHT] TERHUBUNG!")
+                    
+                    await client.start_notify(HEIGHT_CHAR_UUID, height_notification_handler)
+                    
+                    while client.is_connected:
+                        await asyncio.sleep(1)
+                    print("[HEIGHT] Putus.")
+            else:
+                pass
+        except Exception as e:
+            print(f"[HEIGHT] Error: {e}")
+        
+        await asyncio.sleep(2)
+
+# ====================================================================
+# MAIN
 # ====================================================================
 async def main():
     global mqtt_client
     
-    # Setup MQTT
+    # 1. Konek MQTT
     mqtt_client = mqtt.Client()
     mqtt_client.on_connect = on_connect
     mqtt_client.on_message = on_message
@@ -178,14 +203,18 @@ async def main():
     try:
         mqtt_client.connect(MQTT_BROKER, MQTT_PORT, 60)
         mqtt_client.loop_start()
-    except:
-        print("Gagal konek MQTT Broker")
+    except Exception as e:
+        print(f"Gagal konek MQTT: {e}")
+        return
 
-    # Jalankan loop BLE selamanya
-    await connection_loop()
+    # 2. Jalankan kedua loop sensor BLE secara paralel
+    await asyncio.gather(
+        run_weight_scale(),
+        run_height_scale()
+    )
 
 if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        print("Berhenti.")
+        print("\nStop.")

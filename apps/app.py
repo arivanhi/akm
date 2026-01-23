@@ -167,11 +167,10 @@ def on_message(client, userdata, msg):
     if msg.topic == "akm/connect":
         if payload_str == "connected_ble_scale":
             ble_is_connected = True
-            print("-> Status Bluetooth: TERHUBUNG (Active)")
+            print("-> [BLE] Status: TERHUBUNG")
         else:
-            # Jika pesannya misal "disconnected" atau lainnya
             ble_is_connected = False
-            print("-> Status Bluetooth: TERPUTUS (Inactive)")
+            print("-> [BLE] Status: TERPUTUS")
         return
 
     # --- KASUS 1: TERIMA DATA ARRAY UNTUK PREDIKSI ---
@@ -213,6 +212,16 @@ def on_message(client, userdata, msg):
                     # Kirim ke Frontend (Realtime Update)
                     socketio.emit('measurement_update', {
                         'type': 'berat_badan',
+                        'value': val
+                    })
+                    return # Stop disini
+            if data_type == 'tinggi_badan':
+                    val = float(sensor_package.get('value', 0))
+                    print(f"Menerima Tinggi Badan dari BLE: {val} cm")
+                    
+                    # Kirim ke Frontend (Realtime Update)
+                    socketio.emit('measurement_update', {
+                        'type': 'tinggi_badan',
                         'value': val
                     })
                     return # Stop disini
