@@ -551,7 +551,7 @@ def measure():
             conn = get_db_connection(); cur = conn.cursor()
             cur.execute("""
                 SELECT id, nama_lengkap, nik, alamat, umur, jenis_kelamin, 
-                       tanggal_lahir, email, kecamatan, kelurahan
+                       tanggal_lahir, email, provinsi, kecamatan, kelurahan
                 FROM patients WHERE id = %s
             """, (patient_id,))
             row = cur.fetchone()
@@ -562,7 +562,7 @@ def measure():
                 preselected_patient = {
                     'id': row[0], 'nama': row[1], 'nik': row[2], 'alamat': row[3],
                     'umur': umur_str, 'jenis_kelamin': row[5], 'email': row[7],
-                    'kecamatan': row[8], 'kelurahan': row[9] # <--- BARU
+                    'provinsi': row[8], 'kecamatan': row[9], 'kelurahan': row[10] # <--- BARU
                 }
         except Exception as e: print(f"Error: {e}")
 
@@ -571,17 +571,14 @@ def measure():
 @app.route('/input_pasien', methods=['GET', 'POST'])
 def input_pasien():
     if g.user is None: return redirect(url_for('login'))
-    if g.user[2] not in ['admin', 'operator']:
-        flash('Akses ditolak.', 'danger')
-        return redirect(url_for('dashboard'))
-
+    
     source = request.args.get('source') 
     if request.method == 'POST':
         source = request.form.get('source')
         try:
-            conn = get_db_connection()
-            cur = conn.cursor()
+            conn = get_db_connection(); cur = conn.cursor()
             
+            # 1. Ambil 10 Data dari form
             nama = request.form['nama_pasien']
             jk = request.form['jenis_kelamin']
             alamat = request.form['alamat']
@@ -589,30 +586,42 @@ def input_pasien():
             no_hp = request.form['no_hp']
             tgl_lahir = request.form['tanggal_lahir']
             email = request.form['email']
-            kecamatan = request.form['kecamatan']
-            kelurahan = request.form['kelurahan'] # <--- BARU
+            provinsi = request.form['provinsi']    # Item ke-8
+            kecamatan = request.form['kecamatan']  # Item ke-9
+            kelurahan = request.form['kelurahan']  # Item ke-10
             
+            # 2. Eksekusi Query (Perhatikan jumlah %s harus 10 buah)
             cur.execute(
                 """
-                INSERT INTO patients (nama_lengkap, jenis_kelamin, alamat, nik, no_hp, tanggal_lahir, email, kecamatan, kelurahan)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                INSERT INTO patients (
+                    nama_lengkap, 
+                    jenis_kelamin, 
+                    alamat, 
+                    nik, 
+                    no_hp, 
+                    tanggal_lahir, 
+                    email, 
+                    provinsi, 
+                    kecamatan, 
+                    kelurahan
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id
                 """,
-                (nama, jk, alamat, nik, no_hp, tgl_lahir, email, kecamatan, kelurahan)
+                # Pastikan urutan variabel ini sesuai dengan urutan kolom di atas
+                (nama, jk, alamat, nik, no_hp, tgl_lahir, email, provinsi, kecamatan, kelurahan)
             )
+            
             new_id = cur.fetchone()[0]
             conn.commit()
             flash(f'Sukses! Pasien "{nama}" berhasil didaftarkan.', 'success')
             
-            if source == 'measure':
-                return redirect(url_for('measure', patient_id=new_id))
+            if source == 'measure': return redirect(url_for('measure', patient_id=new_id))
             
         except psycopg2.IntegrityError:
-            conn.rollback()
-            flash('Gagal: NIK sudah terdaftar.', 'danger')
+            conn.rollback(); flash('Gagal: NIK sudah terdaftar.', 'danger')
         except Exception as e:
-            conn.rollback()
-            flash(f'Terjadi kesalahan: {e}', 'danger')
+            conn.rollback(); flash(f'Terjadi kesalahan: {e}', 'danger')
         finally:
             cur.close(); conn.close()
             
@@ -915,6 +924,7 @@ def upload_data():
             "nama_pasien": row[0],
             "nik": row[1],
             "jenis_kelamin": row[2],
+            "tanggal_lahir": tgl_lahir.isoformat() if tgl_lahir else None,
             "umur": umur_fix,
             "kecamatan": row[5],
             "kelurahan": row[4],
@@ -1067,7 +1077,7 @@ def search_patients():
     # Tambahkan kelurahan di query
     cur.execute("""
         SELECT id, nama_lengkap, nik, alamat, umur, jenis_kelamin, 
-               tanggal_lahir, email, kecamatan, kelurahan
+               tanggal_lahir, email, provinsi, kecamatan, kelurahan
         FROM patients WHERE nama_lengkap ILIKE %s OR nik ILIKE %s LIMIT 5
     """, (f'%{query}%', f'%{query}%'))
     
@@ -1080,7 +1090,7 @@ def search_patients():
         results.append({
             'id': row[0], 'nama': row[1], 'nik': row[2], 'alamat': row[3],
             'umur': umur_str, 'jenis_kelamin': row[5], 'email': row[7],
-            'kecamatan': row[8], 'kelurahan': row[9] # <--- BARU
+            'provinsi': row[8], 'kecamatan': row[9], 'kelurahan': row[10] # <--- BARU
         })
     return jsonify(results)
 
@@ -1148,7 +1158,7 @@ def get_patient_measurements(patient_id):
 
     # Tambah kelurahan di SELECT
     cur.execute("""
-        SELECT nama_lengkap, nik, jenis_kelamin, alamat, tanggal_lahir, no_hp, email, kecamatan, kelurahan, umur 
+        SELECT nama_lengkap, nik, jenis_kelamin, alamat, tanggal_lahir, no_hp, email, provinsi, kecamatan, kelurahan, umur 
         FROM patients WHERE id = %s
     """, (patient_id,))
     p_row = cur.fetchone()
@@ -1172,7 +1182,7 @@ def get_patient_measurements(patient_id):
     biodata = {
         'nama': p_row[0], 'nik': p_row[1], 'jenis_kelamin': p_row[2], 'alamat': p_row[3],
         'umur': umur_display, 'no_hp': p_row[5], 'email': p_row[6],
-        'kecamatan': p_row[7], 'kelurahan': p_row[8] # <--- BARU
+        'provinsi': p_row[7], 'kecamatan': p_row[8], 'kelurahan': p_row[9] # <--- BARU
     }
 
     # 2. Ambil History Pengukuran (Filter Tanggal jika ada)
@@ -1244,7 +1254,7 @@ def upload_patient_data(patient_id):
     
     # --- UPDATE QUERY: Ambil p.tanggal_lahir ---
     query = """
-        SELECT p.nama_lengkap, p.nik, p.jenis_kelamin, p.tanggal_lahir, p.kelurahan, p.kecamatan, p.alamat,
+        SELECT p.nama_lengkap, p.nik, p.jenis_kelamin, p.tanggal_lahir,p.provinsi, p.kelurahan, p.kecamatan, p.alamat,
                m.measured_at, m.cholesterol_value, m.uric_acid_value, m.blood_sugar_value, 
                m.blood_pressure_sys, m.blood_pressure_dia, m.height, m.weight
         FROM measurements m
@@ -1272,25 +1282,27 @@ def upload_patient_data(patient_id):
         # Hitung Umur dari Tanggal Lahir (row[3])
         tanggal_lahir = row[3]
         umur_fix = calculate_age_detail(tanggal_lahir)
-        waktu_utc = row[7]
+        waktu_utc = row[8]
         waktu_wib = waktu_utc + timedelta(hours=7)
 
         payload.append({
             "nama_pasien": row[0],
             "nik": row[1],
             "jenis_kelamin": row[2],
+            "tanggal_lahir": tanggal_lahir.isoformat() if tanggal_lahir else None,
             "umur": umur_fix, # <--- INI SUDAH TERISI ANGKA
+            "provinsi": row[4],
             "kecamatan": row[5],
-            "kelurahan": row[4],
-            "alamat": row[6],
+            "kelurahan": row[6],
+            "alamat": row[7],
             "tanggal_pengukuran": waktu_wib.isoformat(),
-            "kolesterol": row[8],
-            "asam_urat": row[9],
-            "gula_darah": row[10],
-            "tensi_sys": row[11],
-            "tensi_dia": row[12],
-            "tinggi_badan": row[13],
-            "berat_badan": row[14]
+            "kolesterol": row[9],
+            "asam_urat": row[10],
+            "gula_darah": row[11],
+            "tensi_sys": row[12],
+            "tensi_dia": row[13],
+            "tinggi_badan": row[14],
+            "berat_badan": row[15]
         })
 
     external_api_url = get_active_api_url()
@@ -1369,6 +1381,7 @@ def export_all():
             p.nik,
             p.jenis_kelamin,
             p.tanggal_lahir,
+            p.provinsi,
             p.kecamatan,
             p.kelurahan,
             p.alamat,
@@ -1394,7 +1407,7 @@ def export_all():
     writer = csv.writer(output)
 
     # Tulis baris header
-    writer.writerow(['Nama Pasien', 'NIK', 'Jenis Kelamin', 'Umur', 'Kecamatan', 'Kelurahan', 'Alamat', 'Tanggal Pengukuran', 'Kolesterol (mg/dL)', 'Asam Urat (mg/dL)', 'Gula Darah (mg/dL)', 'Tensi Sys (mmHg)', 'Tensi Dia (mmHg)', 'Tinggi Badan (cm)', 'Berat Badan (kg)'])
+    writer.writerow(['Nama Pasien', 'NIK', 'Jenis Kelamin', 'Umur', 'Provinsi', 'Kecamatan', 'Kelurahan', 'Alamat', 'Tanggal Pengukuran', 'Kolesterol (mg/dL)', 'Asam Urat (mg/dL)', 'Gula Darah (mg/dL)', 'Tensi Sys (mmHg)', 'Tensi Dia (mmHg)', 'Tinggi Badan (cm)', 'Berat Badan (kg)'])
 
     # Tulis semua baris data
     for row in all_data:
@@ -1435,7 +1448,7 @@ def export_selected():
     # Query sama seperti export_all, tapi dengan klausa WHERE IN (...)
     cur.execute(f"""
         SELECT
-            p.nama_lengkap, p.nik, p.jenis_kelamin, p.tanggal_lahir,  p.kecamatan, p.kelurahan,p.alamat,
+            p.nama_lengkap, p.nik, p.jenis_kelamin, p.tanggal_lahir, p.provinsi, p.kecamatan, p.kelurahan,p.alamat,
             m.measured_at, m.cholesterol_value, m.uric_acid_value, m.blood_sugar_value, 
             m.blood_pressure_sys, m.blood_pressure_dia, m.height, m.weight
         FROM measurements m
@@ -1461,7 +1474,7 @@ def export_selected():
 
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(['Nama Pasien', 'NIK', 'Jenis Kelamin', 'Umur', 'Kelurahan', 'Kecamatan', 'Alamat', 'Tanggal Pengukuran', 'Kolesterol (mg/dL)', 'Asam Urat (mg/dL)', 'Gula Darah (mg/dL)', 'Tensi Sys (mmHg)', 'Tensi Dia (mmHg)', 'Tinggi Badan (cm)', 'Berat Badan (kg)'])
+    writer.writerow(['Nama Pasien', 'NIK', 'Jenis Kelamin', 'Umur', 'Provinsi', 'Kecamatan', 'Kelurahan', 'Alamat', 'Tanggal Pengukuran', 'Kolesterol (mg/dL)', 'Asam Urat (mg/dL)', 'Gula Darah (mg/dL)', 'Tensi Sys (mmHg)', 'Tensi Dia (mmHg)', 'Tinggi Badan (cm)', 'Berat Badan (kg)'])
     writer.writerows(selected_data)
     
     output.seek(0)
@@ -1484,7 +1497,7 @@ def export_patient(patient_id):
     # Query untuk mengambil semua riwayat pengukuran dari SATU pasien
     cur.execute("""
         SELECT
-            p.nama_lengkap, p.nik, p.jenis_kelamin, p.tanggal_lahir, p.kecamatan, p.kelurahan, p.alamat,
+            p.nama_lengkap, p.nik, p.jenis_kelamin, p.tanggal_lahir, p.provinsi, p.kecamatan, p.kelurahan, p.alamat,
             m.measured_at, m.cholesterol_value, m.uric_acid_value, m.blood_sugar_value, 
             m.blood_pressure_sys, m.blood_pressure_dia, m.height, m.weight
         FROM measurements m
@@ -1510,7 +1523,7 @@ def export_patient(patient_id):
     output = io.StringIO()
     writer = csv.writer(output)
 
-    writer.writerow(['Nama Pasien', 'NIK', 'Jenis Kelamin', 'Umur', 'Kecamatan', 'Kelurahan', 'Alamat', 'Tanggal Pengukuran', 'Kolesterol (mg/dL)', 'Asam Urat (mg/dL)', 'Gula Darah (mg/dL)', 'Tensi Sys (mmHg)', 'Tensi Dia (mmHg)', 'Tinggi Badan (cm)', 'Berat Badan (kg)'])
+    writer.writerow(['Nama Pasien', 'NIK', 'Jenis Kelamin', 'Umur', 'Provinsi', 'Kecamatan', 'Kelurahan', 'Alamat', 'Tanggal Pengukuran', 'Kolesterol (mg/dL)', 'Asam Urat (mg/dL)', 'Gula Darah (mg/dL)', 'Tensi Sys (mmHg)', 'Tensi Dia (mmHg)', 'Tinggi Badan (cm)', 'Berat Badan (kg)'])
     writer.writerows(patient_data)
     
     output.seek(0)

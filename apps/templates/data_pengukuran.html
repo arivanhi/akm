@@ -153,17 +153,21 @@
                 <p style="margin: 0; font-weight: bold;"><span id="bio_umur">-</span></p>
             </div>
             <div class="form-group" style="flex: 1;">
+                <p style="margin: 0; color: #666; font-size: 0.9rem;">Provinsi</p>
+                <p style="margin: 0; font-weight: bold;"><span id="bio_provinsi">-</span></p>
+            </div>
+             <div class="form-group" style="flex: 1;">
                 <p style="margin: 0; color: #666; font-size: 0.9rem;">Kecamatan</p>
                 <p style="margin: 0; font-weight: bold;"><span id="bio_kecamatan">-</span></p>
             </div>
+        </div>
+
+        <div class="form-row" style="display: flex; gap: 20px;">
             <div class="form-group" style="flex: 1;">
                 <p style="margin: 0; color: #666; font-size: 0.9rem;">Kelurahan</p>
                 <p style="margin: 0; font-weight: bold;"><span id="bio_kelurahan">-</span></p>
             </div>
-        </div>
-
-        <div class="form-row">
-            <div class="form-group" style="flex: 1; border-top: 1px solid #eee; padding-top: 10px;">
+            <div class="form-group" style="flex: 2;">
                 <p style="margin: 0; color: #666; font-size: 0.9rem;">Alamat Lengkap</p>
                 <p style="margin: 0; font-weight: bold;"><span id="bio_alamat">-</span></p>
             </div>
@@ -363,6 +367,7 @@
                 $('#bio_umur').text(bio.umur);
                 $('#bio_jenis_kelamin').text(bio.jenis_kelamin);
                 $('#bio_alamat').text(bio.alamat);
+                $('#bio_provinsi').text(bio.provinsi || '-');
                 $('#bio_kecamatan').text(bio.kecamatan || '-');
                 $('#bio_kelurahan').text(bio.kelurahan || '-');
 

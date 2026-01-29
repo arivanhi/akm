@@ -36,7 +36,7 @@
         </div>
         <h3>Persiapan Alat</h3>
         <p id="instructionText" style="font-size: 1.1rem; color: #555; margin-bottom: 25px;">
-            Silakan masukkan jari anda ke alat.
+            Silakan masukkan jari telunjuk anda anda ke alat.
         </p>
         <button id="btnProceedMeasurement" class="btn-modal btn-primary" style="width: 100%;">
             OK, Mulai Mengukur
@@ -66,14 +66,15 @@
                     <p><strong>Nama:</strong> <span id="detail_nama"></span></p>
                     <p><strong>NIK:</strong> <span id="detail_nik"></span></p>
                     <p><strong>Umur:</strong> <span id="detail_umur"></span></p>
+                    <p><strong>Email:</strong> <span id="detail_email"></span></p>
                 </div>
                 <div>
                     <p><strong>Gender:</strong> <span id="detail_jenis_kelamin"></span></p>
-                    <p><strong>Kecamatan:</strong> <span id="detail_kecamatan"></span>, Kelurahan: <span id="detail_kelurahan"></span></p>
-                    <p><strong>Email:</strong> <span id="detail_email"></span></p>
+                    <p><strong>Wilayah:</strong> <span id="detail_provinsi"></span>, <span id="detail_kecamatan"></span>, <span id="detail_kelurahan"></span></p>
+                    <p><strong>Alamat:</strong> <span id="detail_alamat"></span></p>
+                    
                 </div>
             </div>
-            <p style="margin-top: 10px;"><strong>Alamat:</strong> <span id="detail_alamat"></span></p>
         </div>
         
         <button id="btnStartSession" class="btn-submit">Mulai Sesi Pengukuran</button>
@@ -197,6 +198,7 @@
             $("#detail_umur").text(patient.umur);
             $("#detail_jenis_kelamin").text(patient.jenis_kelamin);
             if(patient.email) $("#detail_email").text(patient.email);
+            $("#detail_provinsi").text(patient.provinsi || '-');
             if(patient.kecamatan) $("#detail_kecamatan").text(patient.kecamatan);
             $("#detail_kelurahan").text(patient.kelurahan || '-');
 
@@ -355,7 +357,7 @@
                 pendingMeasurement = { type: type, flag: flag, label: label };
                 
                 // Set Teks Instruksi
-                $("#instructionText").html(`Untuk pengukuran <strong>${label}</strong>, silakan masukkan jari anda ke alat sekarang.`);
+                $("#instructionText").html(`Untuk pengukuran <strong>${label}</strong>, silakan masukkan jari telunjuk anda ke alat sekarang.`);
                 
                 // Tampilkan Modal Instruksi
                 $("#instructionModal").css("display", "flex");
@@ -394,6 +396,24 @@
             }
         });
 
+        function classifyTensi(sys, dia) {
+            let s = parseInt(sys);
+            let d = parseInt(dia);
+
+            // Klasifikasi berdasarkan derajat keparahan tertinggi (Kemenkes Tabel 2)
+            if (s >= 180 || d >= 110) return "Hipertensi Derajat 3";
+            if (s >= 160 || d >= 100) return "Hipertensi Derajat 2";
+            if (s >= 140 || d >= 90) {
+                // Cek khusus Hipertensi Sistolik Terisolasi (Opsional, bisa digabung Derajat 1)
+                if (d < 90) return "Hipertensi Sistolik Terisolasi"; 
+                return "Hipertensi Derajat 1";
+            }
+            if (s >= 130 || d >= 85) return "Normal Tinggi";
+            if (s >= 120 || d >= 80) return "Normal";
+            
+            return "Optimal";
+        }
+
         // --- SOCKETS ---
         socket.on("measurement_update", function (data) {
             $("#loadingOverlay").fadeOut();
@@ -401,18 +421,25 @@
                 const box = $(`.result-box[data-type="tensi"]`);
                 box.find(".value").text(`${data.sys}/${data.dia} mmHg`);
                 box.find(".numeric-indicator").text(`Pulse: ${data.pulse} bpm`);
+                
+                // Gunakan fungsi klasifikasi baru
+                let status = classifyTensi(data.sys, data.dia);
+                
+                // Update warna status (Opsional: sesuaikan CSS class jika perlu)
+                let statusClass = "status-normal"; // Default hijau
+                if (status.includes("Hipertensi")) statusClass = "status-tinggi"; // Merah
+                else if (status === "Normal Tinggi") statusClass = "status-warning"; // Kuning (jika ada style ini)
+                else if (status === "Optimal") statusClass = "status-normal";
+
+                const statusElem = box.find(".classification-status");
+                statusElem.text(status)
+                          .removeClass("status-normal status-tinggi status-rendah status-warning")
+                          .addClass(statusClass);
+                
+                // Simpan ke sesi
                 currentSessionData.results['tensi'] = { sys: data.sys, dia: data.dia };
-                
-                // Klasifikasi Tensi
-                let sys = parseInt(data.sys);
-                let dia = parseInt(data.dia);
-                let status = "Normal";
-                if(sys >= 160 || dia >= 100) status = "Hipertensi Grade 2";
-                else if(sys >= 140 || dia >= 90) status = "Hipertensi Grade 1";
-                else if(sys >= 120 || dia >= 80) status = "Pre-Hipertensi";
-                
-                box.find(".classification-status").text(status);
                 showActionButtons('tensi');
+            }
             } else if(data.type === 'berat_badan') {
                 const resultBox = $(`.result-box[data-type="berat_badan"]`);
                 resultBox.find(".value").text(`${data.value} kg`);
