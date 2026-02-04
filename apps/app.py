@@ -850,28 +850,27 @@ def wifi_connect():
 @app.route('/upload_data', methods=['POST'])
 def upload_data():
     """
-    Upload data dengan 3 mode prioritas:
-    1. By IDs (Checkbox)
-    2. By Search Query (Hasil pencarian)
-    3. By Date Range (Global)
+    Upload data ke API Dinkes.
+    Mengirim data satu per satu (per row) untuk menghindari error validasi array.
     """
     if g.user is None:
         return jsonify({'status': 'error', 'message': 'Akses ditolak'}), 401
     
-    # Ambil Payload
+    # Ambil Filter dari Request
     req_data = request.json or {}
     start_date = req_data.get('start_date')
     end_date = req_data.get('end_date')
-    patient_ids = req_data.get('patient_ids') # List ID: [1, 2, 5]
-    search_query = req_data.get('search_query') # String: "Budi"
+    patient_ids = req_data.get('patient_ids')
+    search_query = req_data.get('search_query')
 
     conn = get_db_connection()
     cur = conn.cursor()
 
-    # Base Query
+    # Query Data Lengkap
     query = """
         SELECT
-            p.nama_lengkap, p.nik, p.jenis_kelamin, p.tanggal_lahir, p.kelurahan, p.kecamatan, p.alamat,
+            p.nama_lengkap, p.nik, p.jenis_kelamin, p.tanggal_lahir, 
+            p.provinsi, p.kelurahan, p.kecamatan, p.alamat,
             m.measured_at, m.cholesterol_value, m.uric_acid_value, m.blood_sugar_value,
             m.height, m.weight, m.blood_pressure_sys, m.blood_pressure_dia
         FROM measurements m
@@ -880,25 +879,20 @@ def upload_data():
     conditions = []
     params = []
 
-    # 1. Filter Tanggal (Selalu berlaku jika ada)
+    # Filter Waktu
     if start_date and end_date:
         conditions.append("m.measured_at >= %s AND m.measured_at <= %s")
         params.extend([start_date, end_date])
     
-    # 2. Filter Spesifik (IDs ATAU Search)
+    # Filter ID atau Search
     if patient_ids and len(patient_ids) > 0:
-        # Mode Checkbox: Filter berdasarkan ID pasien
-        # Syntax: p.id IN (1, 2, 3)
         placeholders = ','.join(['%s'] * len(patient_ids))
         conditions.append(f"p.id IN ({placeholders})")
         params.extend(patient_ids)
-        
     elif search_query:
-        # Mode Search: Filter berdasarkan Nama/NIK
         conditions.append("(p.nama_lengkap ILIKE %s OR p.nik ILIKE %s)")
         params.extend([f"%{search_query}%", f"%{search_query}%"])
 
-    # Gabungkan Kondisi
     if conditions:
         query += " WHERE " + " AND ".join(conditions)
     
@@ -912,47 +906,82 @@ def upload_data():
     if not all_data:
         return jsonify({'status': 'warning', 'message': 'Tidak ada data ditemukan untuk kriteria ini.'}), 404
 
-    # Format Payload
-    payload = []
-    for row in all_data:
-        tgl_lahir = row[3]
-        umur_fix = calculate_age_detail(tgl_lahir) # Pastikan fungsi ini ada di app.py
-        waktu_utc = row[7]
-        waktu_wib = waktu_utc + timedelta(hours=7)
-
-        payload.append({
-            "nama_pasien": row[0],
-            "nik": row[1],
-            "jenis_kelamin": row[2],
-            "tanggal_lahir": tgl_lahir.isoformat() if tgl_lahir else None,
-            "umur": umur_fix,
-            "kecamatan": row[5],
-            "kelurahan": row[4],
-            "alamat": row[6],
-            "tanggal_pengukuran": waktu_wib.isoformat(),
-            "kolesterol": row[8],
-            "asam_urat": row[9],
-            "gula_darah": row[10],
-            "tinggi_badan": row[11],
-            "berat_badan": row[12],
-            "tensi_sys": row[13],
-            "tensi_dia": row[14]
-        })
-
-    # Kirim ke API Eksternal
+    # Ambil URL & API Key
     external_api_url = get_active_api_url()
     if not external_api_url:
         return jsonify({'status': 'error', 'message': 'URL API belum disetting.'}), 500
 
-    try:
-        print(f"Mengupload {len(payload)} data ke {external_api_url}")
-        response = requests.post(external_api_url, json=payload, timeout=30)
-        response.raise_for_status()
-        return jsonify({'status': 'success', 'message': f'Berhasil mengunggah {len(payload)} data!'})
+    headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "X-API-Key": "awp3UzktboyKlJAkHdPgxawdxhMTyFKPoFIzJcXirPL3NaRsf5QSP7SZrheXxVgP"
+    }
 
-    except Exception as e:
-        print(f"Gagal upload: {e}")
-        return jsonify({'status': 'error', 'message': f'Gagal upload: {str(e)}'}), 500
+    success_count = 0
+    fail_count = 0
+    errors_log = []
+
+    print(f"Memulai upload {len(all_data)} data ke: {external_api_url}")
+
+    # --- LOOPING KIRIM DATA SATU PER SATU ---
+    for row in all_data:
+        try:
+            # Hitung Umur (Pastikan fungsi calculate_age_years/detail tersedia)
+            tgl_lahir = row[3]
+            # Gunakan calculate_age_years jika API butuh Angka (Integer), 
+            # atau calculate_age_detail jika butuh String "X Tahun".
+            # Disini saya gunakan integer tahun agar lebih aman untuk API umum.
+            umur_val = calculate_age_detail(tgl_lahir) 
+            
+            # Konversi Waktu (UTC -> WIB)
+            waktu_utc = row[8]
+            waktu_wib = waktu_utc + timedelta(hours=7)
+
+            # Buat Payload SATUAN (Objek, bukan List)
+            item_payload = {
+                "nama_pasien": row[0],
+                "id_koper": "koper_01",
+                "puskesmas": "Puskesmas Contoh",
+                "nik": row[1],
+                "jenis_kelamin": row[2],
+                # "tanggal_lahir": tgl_lahir.isoformat() if tgl_lahir else None,
+                "umur": umur_val,
+                "provinsi": row[4],
+                "kota": "Semarang",
+                "kecamatan": row[6],
+                "kelurahan": row[5],
+                "alamat": row[7],
+                "tanggal_pengukuran": waktu_wib.isoformat(),
+                "kolesterol": row[9],
+                "asam_urat": row[10],
+                "gula_darah": row[11],
+                "tinggi_badan": row[12],
+                "berat_badan": row[13],
+                "tensi_sys": row[14],
+                "tensi_dia": row[15]
+            }
+
+            # Kirim Request Per Item
+            response = requests.post(external_api_url, json=item_payload, headers=headers, timeout=10)
+            
+            if response.status_code in [200, 201]:
+                success_count += 1
+            else:
+                fail_count += 1
+                # Simpan pesan error untuk debug (ambil maksimal 100 karakter)
+                errors_log.append(f"{row[0]}: {response.text[:100]}")
+
+        except Exception as e:
+            fail_count += 1
+            errors_log.append(f"{row[0]}: {str(e)}")
+
+    # Buat Laporan Akhir
+    msg = f"Selesai! Berhasil: {success_count}, Gagal: {fail_count}."
+    if fail_count > 0:
+        print("Detail Error (Sampel):", errors_log[:3]) # Print 3 error pertama di console server
+        return jsonify({'status': 'warning', 'message': msg + " Cek log server untuk detail error."})
+    
+    return jsonify({'status': 'success', 'message': msg})
 
     # 2. Konversi data ke format JSON (list of dictionaries)
     payload = []
@@ -1252,11 +1281,17 @@ def upload_patient_data(patient_id):
     conn = get_db_connection()
     cur = conn.cursor()
     
-    # --- UPDATE QUERY: Ambil p.tanggal_lahir ---
+    # --- UPDATE QUERY: Urutan kolom disamakan dengan upload_data agar index payload sesuai ---
+    # Index: 
+    # 0:nama, 1:nik, 2:jk, 3:tgl_lahir, 4:prov, 5:kel, 6:kec, 7:alamat, 
+    # 8:tgl_ukur, 9:chol, 10:ua, 11:gula, 
+    # 12:height, 13:weight, 14:sys, 15:dia
     query = """
-        SELECT p.nama_lengkap, p.nik, p.jenis_kelamin, p.tanggal_lahir,p.provinsi, p.kelurahan, p.kecamatan, p.alamat,
-               m.measured_at, m.cholesterol_value, m.uric_acid_value, m.blood_sugar_value, 
-               m.blood_pressure_sys, m.blood_pressure_dia, m.height, m.weight
+        SELECT 
+            p.nama_lengkap, p.nik, p.jenis_kelamin, p.tanggal_lahir, 
+            p.provinsi, p.kelurahan, p.kecamatan, p.alamat,
+            m.measured_at, m.cholesterol_value, m.uric_acid_value, m.blood_sugar_value, 
+            m.height, m.weight, m.blood_pressure_sys, m.blood_pressure_dia
         FROM measurements m
         JOIN patients p ON m.patient_id = p.id
         WHERE p.id = %s
@@ -1277,45 +1312,82 @@ def upload_patient_data(patient_id):
     if not rows:
         return jsonify({'status': 'warning', 'message': 'Tidak ada data pada rentang waktu ini.'})
 
-    payload = []
-    for row in rows:
-        # Hitung Umur dari Tanggal Lahir (row[3])
-        tanggal_lahir = row[3]
-        umur_fix = calculate_age_detail(tanggal_lahir)
-        waktu_utc = row[8]
-        waktu_wib = waktu_utc + timedelta(hours=7)
-
-        payload.append({
-            "nama_pasien": row[0],
-            "nik": row[1],
-            "jenis_kelamin": row[2],
-            "tanggal_lahir": tanggal_lahir.isoformat() if tanggal_lahir else None,
-            "umur": umur_fix, # <--- INI SUDAH TERISI ANGKA
-            "provinsi": row[4],
-            "kecamatan": row[5],
-            "kelurahan": row[6],
-            "alamat": row[7],
-            "tanggal_pengukuran": waktu_wib.isoformat(),
-            "kolesterol": row[9],
-            "asam_urat": row[10],
-            "gula_darah": row[11],
-            "tensi_sys": row[12],
-            "tensi_dia": row[13],
-            "tinggi_badan": row[14],
-            "berat_badan": row[15]
-        })
-
     external_api_url = get_active_api_url()
     
     if not external_api_url:
         return jsonify({'status': 'error', 'message': 'URL API belum disetting.'}), 500
 
-    try:
-        response = requests.post(external_api_url, json=payload, timeout=30)
-        response.raise_for_status()
-        return jsonify({'status': 'success', 'message': f'Berhasil mengunggah {len(payload)} data pasien ini!'})
-    except Exception as e:
-        return jsonify({'status': 'error', 'message': f'Gagal upload: {str(e)}'}), 500
+    # Konfigurasi Headers & API Key
+    headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "X-API-Key": "awp3UzktboyKlJAkHdPgxawdxhMTyFKPoFIzJcXirPL3NaRsf5QSP7SZrheXxVgP"
+    }
+
+    success_count = 0
+    fail_count = 0
+    errors_log = []
+
+    print(f"Memulai upload {len(rows)} data pasien {patient_id} ke: {external_api_url}")
+
+    # --- LOOPING KIRIM DATA SATU PER SATU (Agar format JSON Object, bukan List) ---
+    for row in rows:
+        try:
+            tgl_lahir = row[3]
+            # Gunakan calculate_age_detail sesuai request
+            umur_val = calculate_age_detail(tgl_lahir) 
+            
+            # Konversi Waktu (UTC -> WIB)
+            waktu_utc = row[8]
+            waktu_wib = waktu_utc + timedelta(hours=7)
+
+            # Buat Payload SATUAN (Objek Dictionary)
+            item_payload = {
+                "nama_pasien": row[0],
+                "id_koper": "koper_01",
+                "puskesmas": "Puskesmas Contoh",
+                "nik": str(row[1]),
+                "jenis_kelamin": row[2],
+                # "tanggal_lahir": tgl_lahir.isoformat() if tgl_lahir else None,
+                "umur": umur_val,
+                "provinsi": row[4],
+                "kota": "Semarang",
+                "kecamatan": row[6],
+                "kelurahan": row[5],
+                "alamat": row[7],
+                "tanggal_pengukuran": waktu_wib.isoformat(),
+                "kolesterol": row[9],
+                "asam_urat": row[10],
+                "gula_darah": row[11],
+                "tinggi_badan": row[12],
+                "berat_badan": row[13],
+                "tensi_sys": row[14],
+                "tensi_dia": row[15]
+            }
+
+            # Kirim Request Per Item
+            response = requests.post(external_api_url, json=item_payload, headers=headers, timeout=10)
+            
+            if response.status_code in [200, 201]:
+                success_count += 1
+            else:
+                fail_count += 1
+                # Simpan pesan error ringkas
+                errors_log.append(f"Data {waktu_wib}: {response.text[:100]}")
+
+        except Exception as e:
+            fail_count += 1
+            errors_log.append(f"Error Script: {str(e)}")
+
+    # Buat Laporan Akhir
+    if success_count > 0 and fail_count == 0:
+        return jsonify({'status': 'success', 'message': f'Sukses mengunggah {success_count} data!'})
+    elif success_count > 0 and fail_count > 0:
+        return jsonify({'status': 'warning', 'message': f'Selesai parsial. Sukses: {success_count}, Gagal: {fail_count}. Cek log server.'})
+    else:
+        # Jika gagal semua
+        err_msg = errors_log[0] if errors_log else "Unknown Error"
+        return jsonify({'status': 'error', 'message': f'Gagal upload semua data. Error: {err_msg}'}), 500
 
 @app.route('/patient/edit/<int:patient_id>', methods=['POST'])
 def edit_patient(patient_id):

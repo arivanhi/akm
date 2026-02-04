@@ -36,7 +36,7 @@
         </div>
         <h3>Persiapan Alat</h3>
         <p id="instructionText" style="font-size: 1.1rem; color: #555; margin-bottom: 25px;">
-            Silakan masukkan jari telunjuk anda anda ke alat.
+            Silakan masukkan jari anda ke alat.
         </p>
         <button id="btnProceedMeasurement" class="btn-modal btn-primary" style="width: 100%;">
             OK, Mulai Mengukur
@@ -88,42 +88,42 @@
 
     <div class="results-grid">
         <div class="result-box" data-type="asam_urat">
-            <h4>Asam Urat</h4>
+            <h2 style="color: #f1f1f1;margin-bottom: 10px;">Asam Urat</h2>
             <p class="measure-status"></p>
             <p class="value">-</p>
-            <p class="classification-status" style="font-weight: bold; margin-top: 5px;"></p>
+            <h3 class="classification-status" style="font-weight: bold; margin-top: 5px;"></h3>
         </div>
 
         <div class="result-box" data-type="cholesterol">
-            <h4>Kolesterol</h4>
+            <h2 style="color: #f1f1f1;margin-bottom: 10px;">Kolesterol</h2>
             <p class="measure-status"></p>
             <p class="value">-</p>
-            <p class="classification-status" style="font-weight: bold; margin-top: 5px;"></p>
+            <h3 class="classification-status" style="font-weight: bold; margin-top: 5px;"></h3>
         </div>
 
         <div class="result-box" data-type="gula_darah">
-            <h4>Gula Darah</h4>
+            <h2 style="color: #f1f1f1;margin-bottom: 10px;">Gula Darah</h2>
             <p class="measure-status"></p>
             <p class="value">-</p>
-            <p class="classification-status" style="font-weight: bold; margin-top: 5px;"></p>
+            <h3 class="classification-status" style="font-weight: bold; margin-top: 5px;"></h3>
         </div>
 
         <div class="result-box" data-type="tensi">
-            <h4>Tekanan Darah</h4>
+            <h2 style="color: #f1f1f1;margin-bottom: 10px;">Tekanan Darah</h2>
             <p class="measure-status">Menunggu Pengukuran</p>
             <p class="value">-</p>
             <p class="numeric-indicator">Pulse: - bpm</p>
-            <p class="classification-status" style="font-weight: bold; margin-top: 5px;"></p>    
+            <h3 class="classification-status" style="font-weight: bold; margin-top: 5px;"></h3>    
         </div>
 
         <div class="result-box" data-type="tinggi_badan">
-            <h4>Tinggi Badan</h4>
+            <h2 style="color: #f1f1f1;margin-bottom: 10px;">Tinggi Badan</h2>
             <p class="measure-status">Menunggu Pengukuran</p>
             <p class="value">-</p>   
         </div>
 
         <div class="result-box" data-type="berat_badan">
-            <h4>Berat Badan</h4>
+            <h2 style="color: #f1f1f1;margin-bottom: 10px;">Berat Badan</h2>
             <p class="measure-status">Menunggu Pengukuran</p>
             <p class="value">-</p>
         </div>
@@ -152,6 +152,34 @@
             autoPatient = {{ preselected_patient | tojson | safe if preselected_patient is defined and preselected_patient else 'null' }};
         } catch (e) { console.error(e); }
 
+        function classifyTensi(sys, dia) {
+            let s = parseInt(sys);
+            let d = parseInt(dia);
+
+            // Prioritas dari yang terparah (Grade 3) ke bawah
+            // Hipertensi Derajat 3: TDS >= 180 atau TDD >= 110 
+            if (s >= 180 || d >= 110) return "Hipertensi Derajat 3";
+            
+            // Hipertensi Derajat 2: TDS 160-179 atau TDD 100-109 
+            if (s >= 160 || d >= 100) return "Hipertensi Derajat 2";
+            
+            // Hipertensi Derajat 1: TDS 140-159 atau TDD 90-99 
+            if (s >= 140 || d >= 90) {
+                // Hipertensi Sistolik Terisolasi: TDS >= 140 dan TDD < 90 
+                if (s >= 140 && d < 90) return "Hipertensi Sistolik Terisolasi";
+                return "Hipertensi Derajat 1";
+            }
+            
+            // Normal Tinggi: TDS 130-139 atau TDD 85-89 
+            if (s >= 130 || d >= 85) return "Normal Tinggi";
+            
+            // Normal: TDS 120-129 atau TDD 80-84 
+            if (s >= 120 || d >= 80) return "Normal";
+            
+            // Optimal: TDS < 120 dan TDD < 80 
+            return "Optimal";
+        }
+
         // --- FUNGSI LOGIKA KESEHATAN (KLASIFIKASI) ---
         function getHealthStatus(type, value, gender) {
             let val = parseFloat(value);
@@ -171,6 +199,7 @@
                     return "Normal";
                 }
             }
+            
             if (type === 'cholesterol') {
                 // Umum: < 200 Normal, >= 200 Tinggi
                 if (val < 200) return "Normal";
@@ -252,6 +281,7 @@
                 patient_name: currentSessionData.patient_name 
             });
         }
+        
 
         function showActionButtons(type) {
             const resultBox = $(`.result-box[data-type=${type}]`);
@@ -289,6 +319,8 @@
             div.append(btnUlang).append(btnOk);
             resultBox.append(div);
         }
+
+        
 
         // --- INIT ---
         if (autoPatient) {
@@ -396,24 +428,6 @@
             }
         });
 
-        function classifyTensi(sys, dia) {
-            let s = parseInt(sys);
-            let d = parseInt(dia);
-
-            // Klasifikasi berdasarkan derajat keparahan tertinggi (Kemenkes Tabel 2)
-            if (s >= 180 || d >= 110) return "Hipertensi Derajat 3";
-            if (s >= 160 || d >= 100) return "Hipertensi Derajat 2";
-            if (s >= 140 || d >= 90) {
-                // Cek khusus Hipertensi Sistolik Terisolasi (Opsional, bisa digabung Derajat 1)
-                if (d < 90) return "Hipertensi Sistolik Terisolasi"; 
-                return "Hipertensi Derajat 1";
-            }
-            if (s >= 130 || d >= 85) return "Normal Tinggi";
-            if (s >= 120 || d >= 80) return "Normal";
-            
-            return "Optimal";
-        }
-
         // --- SOCKETS ---
         socket.on("measurement_update", function (data) {
             $("#loadingOverlay").fadeOut();
@@ -421,26 +435,26 @@
                 const box = $(`.result-box[data-type="tensi"]`);
                 box.find(".value").text(`${data.sys}/${data.dia} mmHg`);
                 box.find(".numeric-indicator").text(`Pulse: ${data.pulse} bpm`);
+                currentSessionData.results['tensi'] = { sys: data.sys, dia: data.dia };
                 
-                // Gunakan fungsi klasifikasi baru
+                // Gunakan fungsi klasifikasi Kemenkes
                 let status = classifyTensi(data.sys, data.dia);
                 
-                // Update warna status (Opsional: sesuaikan CSS class jika perlu)
-                let statusClass = "status-normal"; // Default hijau
-                if (status.includes("Hipertensi")) statusClass = "status-tinggi"; // Merah
-                else if (status === "Normal Tinggi") statusClass = "status-warning"; // Kuning (jika ada style ini)
-                else if (status === "Optimal") statusClass = "status-normal";
+                // Styling warna status
+                let statusClass = "status-normal";
+                if (status.includes("Hipertensi Derajat 3") || status.includes("Hipertensi Derajat 2")) statusClass = "status-tinggi"; // Merah
+                else if (status.includes("Hipertensi Derajat 1") || status.includes("Terisolasi")) statusClass = "status-warning"; // Kuning/Oranye
+                else if (status === "Normal Tinggi") statusClass = "status-warning"; 
+                else if (status === "Optimal") statusClass = "status-normal"; // Hijau
 
                 const statusElem = box.find(".classification-status");
                 statusElem.text(status)
                           .removeClass("status-normal status-tinggi status-rendah status-warning")
                           .addClass(statusClass);
                 
-                // Simpan ke sesi
-                currentSessionData.results['tensi'] = { sys: data.sys, dia: data.dia };
                 showActionButtons('tensi');
             }
-            } else if(data.type === 'berat_badan') {
+            else if(data.type === 'berat_badan') {
                 const resultBox = $(`.result-box[data-type="berat_badan"]`);
                 resultBox.find(".value").text(`${data.value} kg`);
                 currentSessionData.results['berat_badan'] = data.value;
