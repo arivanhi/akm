@@ -6,36 +6,29 @@
     <h1 class="page-title">Pendaftaran Pasien Baru</h1>
 </div>
 
-<div class="form-container" style="max-width: 800px; margin: 0 auto;">
-    <div style="border-bottom: 1px solid #eee; margin-bottom: 20px; padding-bottom: 10px;">
-        <h3>Formulir Data Diri Pasien</h3>
-        <p class="text-muted">Masukkan data pasien dengan lengkap dan benar.</p>
-    </div>
-
+<div class="form-container">
     <form method="POST" action="{{ url_for('input_pasien') }}">
-        <input type="hidden" name="source" value="{{ source if source else '' }}">
-
+        <input type="hidden" name="source" value="{{ source }}">
+        
         <div class="form-row">
             <div class="form-group">
-                <label style="font-weight: 600;">Nama Lengkap <span style="color:red">*</span></label>
-                <input type="text" name="nama_pasien" class="form-control" required placeholder="Nama sesuai KTP">
+                <label>Nama Lengkap <span style="color:red">*</span></label>
+                <input type="text" name="nama_pasien" class="form-control" required placeholder="Nama Lengkap Pasien">
             </div>
             <div class="form-group">
-                <label style="font-weight: 600;">NIK <span style="color:red">*</span></label>
-                <input type="number" name="nik" class="form-control" required placeholder="16 digit NIK">
+                <label>NIK (16 Digit) <span style="color:red">*</span></label>
+                <input type="number" name="nik" class="form-control" required placeholder="Nomor Induk Kependudukan">
             </div>
         </div>
 
         <div class="form-row">
             <div class="form-group">
-                <label style="font-weight: 600;">Tanggal Lahir <span style="color:red">*</span></label>
+                <label>Tanggal Lahir <span style="color:red">*</span></label>
                 <input type="date" name="tanggal_lahir" class="form-control" required>
-                <small class="text-muted">Umur akan dihitung otomatis oleh sistem.</small>
             </div>
             <div class="form-group">
-                <label style="font-weight: 600;">Jenis Kelamin <span style="color:red">*</span></label>
+                <label>Jenis Kelamin <span style="color:red">*</span></label>
                 <select name="jenis_kelamin" class="form-control" required>
-                    <option value="" disabled selected>-- Pilih --</option>
                     <option value="Laki-laki">Laki-laki</option>
                     <option value="Perempuan">Perempuan</option>
                 </select>
@@ -44,48 +37,143 @@
 
         <div class="form-row">
             <div class="form-group">
-                <label style="font-weight: 600;">No. HP <span style="color:red">*</span></label>
-                <input type="text" name="no_hp" class="form-control" required placeholder="08xxx">
+                <label>No. HP / WhatsApp <span style="color:red">*</span></label>
+                <input type="number" name="no_hp" class="form-control" required placeholder="08xxxxxxxxxx">
             </div>
             <div class="form-group">
-                <label style="font-weight: 600;">Email</label>
-                <input type="email" name="email" class="form-control" placeholder="contoh@email.com (Opsional)">
+                <label>Email (Opsional)</label>
+                <input type="email" name="email" class="form-control" placeholder="alamat@email.com">
             </div>
         </div>
 
         <div class="form-row">
-            <div class="form-group">
-                <label style="font-weight: 600;">Provinsi <span style="color:red">*</span></label>
-                <input type="text" name="provinsi" class="form-control" required placeholder="Nama Provinsi">
+            <div class="form-group" style="overflow: visible;">
+                <label>Provinsi <span style="color:red">*</span></label>
+                <div class="ac-wrapper">
+                    <input type="text" id="inputProvinsi" name="provinsi" class="form-control ac-input" required placeholder="Ketik Provinsi (cth: Jawa Tengah)..." autocomplete="off">
+                    <div id="listProvinsi" class="ac-list-container"></div>
+                </div>
             </div>
 
-            <div class="form-group">
-                <label style="font-weight: 600;">Kecamatan <span style="color:red">*</span></label>
-                <input type="text" name="kecamatan" class="form-control" required placeholder="Nama Kecamatan">
+            <div class="form-group" style="overflow: visible;">
+                <label>Kecamatan <span style="color:red">*</span></label>
+                <div class="ac-wrapper">
+                    <input type="text" id="inputKecamatan" name="kecamatan" class="form-control ac-input" required placeholder="Ketik Kecamatan (cth: Tembalang)..." autocomplete="off">
+                    <div id="listKecamatan" class="ac-list-container"></div>
+                </div>
             </div>
         </div>
 
         <div class="form-row">
-             <div class="form-group">
-                <label style="font-weight: 600;">Kelurahan <span style="color:red">*</span></label>
-                <input type="text" name="kelurahan" class="form-control" required placeholder="Nama Kelurahan">
+            <div class="form-group" style="overflow: visible;">
+                <label>Kelurahan <span style="color:red">*</span></label>
+                <div class="ac-wrapper">
+                    <input type="text" id="inputKelurahan" name="kelurahan" class="form-control ac-input" required placeholder="Ketik Kelurahan (cth: Bulusan)..." autocomplete="off">
+                    <div id="listKelurahan" class="ac-list-container"></div>
+                </div>
             </div>
             
             <div class="form-group">
-                <label style="font-weight: 600;">Alamat Detail <span style="color:red">*</span></label>
-                <input type="text" name="alamat" class="form-control" required placeholder="Jl. Nama Jalan, RT/RW">
+                <label>Alamat Detail (Jalan, RT/RW) <span style="color:red">*</span></label>
+                <input type="text" name="alamat" class="form-control" required placeholder="Jl. Nama Jalan, No. Rumah, RT/RW">
             </div>
         </div>
 
-        <div style="margin-top: 30px; display: flex; justify-content: flex-end; gap: 10px;">
-            <button type="reset" class="btn-submit" style="background-color: #6c757d;">
-                <i class="fas fa-undo"></i> Reset
-            </button>
-            
-            <button type="submit" class="btn-submit" style="background-color: #28a745; min-width: 150px;">
-                <i class="fas fa-save"></i> Simpan Data
-            </button>
-        </div>
+        <button type="submit" class="btn-submit" style="width: 100%; margin-top: 20px;">
+            <i class="fas fa-save"></i> Simpan Data Pasien
+        </button>
     </form>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+$(document).ready(function() {
+    
+    // Fungsi Autocomplete Cerdas
+    function setupAutocomplete(inputId, listId, category) {
+        const $input = $(inputId);
+        const $list = $(listId);
+        let timeout = null;
+
+        $input.on('input', function() {
+            const val = this.value;
+            
+            if (!val) {
+                $list.hide().empty();
+                return;
+            }
+            
+            $input.addClass('ac-loading');
+
+            clearTimeout(timeout);
+            timeout = setTimeout(function() {
+                
+                $.getJSON('/api/search_wilayah', { category: category, q: val })
+                .done(function(data) {
+                    $list.empty();
+                    
+                    if (data.length > 0) {
+                        
+                        data.forEach(item => {
+                            // Highlight text yang cocok
+                            let regex = new RegExp(`(${val})`, "gi");
+                            let displayName = item.nama.replace(regex, "<strong>$1</strong>");
+                            
+                            // Jika ini pencarian Kelurahan, tampilkan juga nama Kecamatannya di list
+                            let subText = "";
+                            if (category === 'kelurahan' && item.kecamatan) {
+                                subText = `<br><small style="color:#666; font-size:0.8em;">Kec. ${item.kecamatan}</small>`;
+                            }
+
+                            const $itemDiv = $("<div>").addClass("ac-item").html(displayName + subText);
+                            
+                            // --- LOGIKA KLIK ITEM ---
+                            $itemDiv.on("click", function() {
+                                // 1. Isi input yang sedang diketik
+                                $input.val(item.nama);
+                                
+                                // 2. FITUR SPESIAL: Auto-fill Kecamatan jika memilih Kelurahan
+                                if (category === 'kelurahan' && item.kecamatan) {
+                                    // Isi kolom kecamatan otomatis
+                                    $('#inputKecamatan').val(item.kecamatan);
+                                    
+                                    // Efek visual (kedip kuning) agar user sadar kolom terisi otomatis
+                                    $('#inputKecamatan').css('background-color', '#fff3cd')
+                                        .animate({ backgroundColor: "#ffffff" }, 1000, function() {
+                                            $(this).css('background-color', ''); 
+                                        });
+                                }
+
+                                $list.hide().empty();
+                            });
+                            
+                            $list.append($itemDiv);
+                        });
+                        $list.show(); 
+                    } else {
+                        $list.hide(); 
+                    }
+                })
+                .fail(function() { console.error("API Error"); })
+                .always(function() { $input.removeClass('ac-loading'); });
+
+            }, 300); 
+        });
+
+        // Klik luar tutup list
+        $(document).on("click", function(e) {
+            if (!$input.is(e.target) && !$list.is(e.target) && $list.has(e.target).length === 0) {
+                $list.hide();
+            }
+        });
+    }
+
+    // Inisialisasi
+    setupAutocomplete('#inputProvinsi', '#listProvinsi', 'provinsi');
+    setupAutocomplete('#inputKecamatan', '#listKecamatan', 'kecamatan');
+    setupAutocomplete('#inputKelurahan', '#listKelurahan', 'kelurahan');
+
+});
+</script>
 {% endblock %}

@@ -1,6 +1,9 @@
 {% extends 'base.html' %} 
 {% block title %}Data Pengukuran{% endblock %} 
 
+{% block head %}
+{% endblock %}
+
 {% block content %}
 <div id="deleteConfirmModal" class="modal-overlay" style="display: none">
     <div class="modal-content">
@@ -212,10 +215,35 @@
         </div>
     </div>
 
-    <div class="row"></div>
-    
-    <div class="chart-container">
+    <div class="chart-container" style="background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); margin-bottom: 20px;">
         <canvas id="measurementChart"></canvas>
+    </div>
+</div>
+
+<div id="puskesmasModal" class="modal-overlay" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 9999; justify-content: center; align-items: center;">
+    <div class="modal-content" style="background: white; padding: 30px; border-radius: 12px; width: 450px; max-width: 90%; box-shadow: 0 5px 15px rgba(0,0,0,0.2);">
+        <div style="text-align: center; margin-bottom: 25px;">
+            <i class="fas fa-hospital-user" style="font-size: 3.5rem; color: #007bff; margin-bottom: 15px;"></i>
+            <h3 style="margin: 0; font-weight: 700; color: #333;">Pilih Puskesmas Tujuan</h3>
+        </div>
+        
+        <p style="color: #666; margin-bottom: 15px; font-size: 0.95rem; text-align: center;">
+            Data akan dikirim ke API Dinas Kesehatan untuk Puskesmas:
+        </p>
+        
+        <div class="form-group" style="margin-bottom: 25px; overflow: visible;">
+            <div class="ac-wrapper">
+                <input type="text" id="inputPuskesmas" class="form-control ac-input" placeholder="Ketik nama Puskesmas..." autocomplete="off" style="padding: 12px; border-radius: 6px;">
+                <div id="listPuskesmas" class="ac-list-container"></div>
+            </div>
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 10px;">
+            <button id="btnCancelPuskesmas" class="btn-custom-cancel">Batal</button>
+            <button id="btnConfirmUpload" class="btn-custom-confirm">
+                <i class="fas fa-cloud-upload-alt"></i> Kirim Data
+            </button>
+        </div>
     </div>
 </div>
 
@@ -223,144 +251,149 @@
 
 {% block scripts %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
 <script>
     $(document).ready(function () {
-        const listView = $("#patientListView");
-        const detailView = $("#patientDetailView");
-        const detailPatientName = $("#detailPatientName");
-        let measurementChart = null; 
-        let currentPatientId = null;
+        
+        // --- VARIABLE GLOBAL ---
+        let uploadMode = ''; 
+        let pendingUploadPayload = null; 
+        let currentPatientId = null; 
+        let allPuskesmasData = []; // Data untuk autocomplete
+        let measurementChart = null; // Instance Chart
 
-        // --- 1. LOGIKA FILTER GLOBAL (List Pasien) ---
-        // Tombol Terapkan Filter
-        // --- 1. LOGIKA FILTER GLOBAL (Search & Date) ---
-    
-    // Fungsi Utama Filter
-    function applyGlobalFilter() {
-        let q = $('#globalSearchInput').val();
-        let s = $('#globalStartDate').val();
-        let e = $('#globalEndDate').val();
-        
-        // Bangun URL Query String
-        let url = `{{ url_for('data_pengukuran') }}?`;
-        let params = [];
-        
-        if (q) params.push(`q=${encodeURIComponent(q)}`);
-        if (s) params.push(`start_date=${s}`);
-        if (e) params.push(`end_date=${e}`);
-        
-        // Redirect
-        if (params.length > 0) {
-            window.location.href = url + params.join('&');
-        } else {
-            // Jika kosong semua, reload ke halaman bersih
-            window.location.href = `{{ url_for('data_pengukuran') }}`;
+        // --- 1. LOAD DATA PUSKESMAS ---
+        function loadPuskesmasList() {
+            $.getJSON('/api/puskesmas_list', function(data) {
+                if(data && data.length > 0) {
+                    allPuskesmasData = data; 
+                }
+            }).fail(function() { console.error("Gagal memuat data puskesmas"); });
         }
-    }
+        loadPuskesmasList(); 
 
-    // Tombol Terapkan (Bisa untuk tanggal & search sekaligus)
-    $('#btnGlobalFilter').click(function() {
-        applyGlobalFilter();
-    });
+        // --- 2. LOGIKA AUTOCOMPLETE PUSKESMAS (Manual Filter) ---
+        const inputPuskesmas = $("#inputPuskesmas");
+        const listPuskesmas = $("#listPuskesmas");
 
-    // Tekan Enter di kolom pencarian -> langsung cari
-    $('#globalSearchInput').keypress(function(e) {
-        if(e.which == 13) applyGlobalFilter();
-    });
+        inputPuskesmas.on("input", function() {
+            const val = this.value;
+            
+            if (!val) {
+                listPuskesmas.hide().empty();
+                return;
+            }
 
-    // Tombol Reset
-    $('#btnGlobalReset').click(function() {
-        window.location.href = `{{ url_for('data_pengukuran') }}`;
-    });
+            // Filter data secara lokal
+            const matches = allPuskesmasData.filter(p => p.toLowerCase().includes(val.toLowerCase()));
+            
+            listPuskesmas.empty();
+            if (matches.length > 0) {
+                matches.forEach(p => {
+                    let regex = new RegExp(`(${val})`, "gi");
+                    let highlighted = p.replace(regex, "<strong>$1</strong>");
+                    
+                    const item = $("<div>").addClass("ac-item").html(highlighted);
+                    item.on("click", function() {
+                        inputPuskesmas.val(p);
+                        listPuskesmas.hide().empty();
+                    });
+                    listPuskesmas.append(item);
+                });
+                listPuskesmas.show();
+            } else {
+                listPuskesmas.hide();
+            }
+        });
 
-        // --- 2. UPLOAD DATA DENGAN FILTER ---
-        // Menggunakan filter tanggal global untuk menentukan data yang diupload
-        // --- 2. UPLOAD DATA CERDAS (Checkbox > Search > Global) ---
+        // Tutup list jika klik luar
+        $(document).on("click", function (e) {
+            if (!inputPuskesmas.is(e.target) && !listPuskesmas.is(e.target) && listPuskesmas.has(e.target).length === 0) {
+                listPuskesmas.hide();
+            }
+        });
+
+        // --- 3. TOMBOL UPLOAD ---
         $("#btnUploadData").on("click", function () {
-            // 1. Ambil Parameter Tanggal
             let s = $('#globalStartDate').val();
             let e = $('#globalEndDate').val();
             let datePayload = {};
-            let dateMsg = "";
-            
-            if (s && e) {
-                datePayload = { start_date: s + " 00:00:00", end_date: e + " 23:59:59" };
-                dateMsg = ` pada rentang ${s} s/d ${e}`;
-            }
+            if (s && e) datePayload = { start_date: s + " 00:00:00", end_date: e + " 23:59:59" };
 
-            // 2. Cek Checkbox (Prioritas Tertinggi)
             let selectedIds = [];
-            $(".patient-checkbox:checked").each(function() {
-                selectedIds.push($(this).val());
-            });
-
-            // 3. Cek Search Query (Jika tidak ada checkbox)
+            $(".patient-checkbox:checked").each(function() { selectedIds.push($(this).val()); });
             let searchQuery = $('#globalSearchInput').val();
 
-            // --- MENENTUKAN LOGIKA UPLOAD ---
-            let payload = { ...datePayload }; // Copy object tanggal
-            let msg = "";
+            uploadMode = 'mass';
+            pendingUploadPayload = { ...datePayload };
 
-            if (selectedIds.length > 0) {
-                // KASUS A: Upload Pasien Terpilih
-                payload.patient_ids = selectedIds;
-                msg = `Mengunggah data milik ${selectedIds.length} pasien terpilih${dateMsg}?`;
-            } 
-            else if (searchQuery) {
-                // KASUS B: Upload Hasil Pencarian
-                payload.search_query = searchQuery;
-                msg = `Mengunggah data hasil pencarian "${searchQuery}"${dateMsg}?`;
-            } 
-            else {
-                // KASUS C: Upload Global / Semua
-                if (s && e) {
-                    msg = `Mengunggah SEMUA data${dateMsg}?`;
-                } else {
-                    msg = "PERINGATAN: Anda akan mengunggah SELURUH data di database (tanpa filter). Lanjutkan?";
-                }
+            if (selectedIds.length > 0) pendingUploadPayload.patient_ids = selectedIds;
+            else if (searchQuery) pendingUploadPayload.search_query = searchQuery;
+            
+            inputPuskesmas.val(""); listPuskesmas.hide();
+            $("#puskesmasModal").css("display", "flex");
+        });
+
+        $('#btnUploadCurrentPatient').on('click', function() {
+            uploadMode = 'single';
+            inputPuskesmas.val(""); listPuskesmas.hide();
+            $("#puskesmasModal").css("display", "flex");
+        });
+
+        // --- 4. LOGIKA MODAL ---
+        $("#btnCancelPuskesmas").click(function() { $("#puskesmasModal").hide(); });
+
+        $("#btnConfirmUpload").click(function() {
+            const selectedPuskesmas = inputPuskesmas.val();
+            
+            if (!selectedPuskesmas || !allPuskesmasData.includes(selectedPuskesmas)) {
+                alert("Harap pilih Puskesmas yang valid dari daftar!");
+                return;
             }
 
-            // Eksekusi
-            if (!confirm(msg)) return;
+            const btn = $(this);
+            const originalText = btn.html();
+            btn.prop("disabled", true).html('<i class="fas fa-spinner fa-spin"></i> Mengirim...');
 
-            const button = $(this);
-            const originalText = button.html(); // Simpan icon/text asli
-            button.prop("disabled", true).html('<i class="fas fa-spinner fa-spin"></i> Mengirim...');
-            
+            let ajaxUrl = "";
+            let finalPayload = {};
+
+            if (uploadMode === 'mass') {
+                ajaxUrl = "{{ url_for('upload_data') }}";
+                finalPayload = { ...pendingUploadPayload, puskesmas: selectedPuskesmas };
+            } else if (uploadMode === 'single') {
+                ajaxUrl = `/upload_patient_data/${currentPatientId}`;
+                let s = $('#startDateFilter').val();
+                let e = $('#endDateFilter').val();
+                if (s && e) finalPayload = { start_date: s + " 00:00:00", end_date: e + " 23:59:59" };
+                finalPayload.puskesmas = selectedPuskesmas;
+            }
+
             $.ajax({
-                url: "{{ url_for('upload_data') }}",
-                method: "POST",
-                contentType: "application/json",
-                data: JSON.stringify(payload),
+                url: ajaxUrl, method: "POST", contentType: "application/json", data: JSON.stringify(finalPayload),
                 success: function (response) { 
-                    showNotification(response.message, "success"); 
-                    // Opsional: Uncheck semua checkbox setelah sukses
-                    $(".patient-checkbox").prop('checked', false);
+                    $("#puskesmasModal").hide();
+                    alert(response.message);
+                    if (uploadMode === 'mass') $(".patient-checkbox").prop('checked', false);
                 },
                 error: function (xhr) {
-                    const message = xhr.responseJSON ? xhr.responseJSON.message : "Terjadi error tidak diketahui.";
-                    showNotification(message, "danger");
+                    alert("Gagal: " + (xhr.responseJSON ? xhr.responseJSON.message : "Kesalahan koneksi"));
                 },
-                complete: function () { 
-                    button.prop("disabled", false).html(originalText); 
-                }
+                complete: function () { btn.prop("disabled", false).html(originalText); }
             });
         });
 
-        // --- FUNGSI LOAD DATA (CHART + TABEL) ---
+        // --- 5. FUNGSI LOAD DATA PASIEN (TERMASUK GRAFIK) ---
         function loadPatientData(patientId, startDate = null, endDate = null) {
-            currentPatientId = patientId;
+            currentPatientId = patientId; 
             
             let url = `/api/patient_measurements/${patientId}`;
-            if (startDate && endDate) {
-                url += `?start_date=${startDate}&end_date=${endDate}`;
-            }
+            if (startDate && endDate) url += `?start_date=${startDate}&end_date=${endDate}`;
 
-            // Tampilkan loading di tabel sebelum data datang
             $('#historyTableBody').html('<tr><td colspan="8" class="text-center"><i class="fas fa-spinner fa-spin"></i> Memuat data...</td></tr>');
 
             $.getJSON(url, function(data) {
-                // 1. Isi Biodata
+                // A. Isi Biodata
                 const bio = data.biodata;
                 $('#bio_nama').text(bio.nama);
                 $('#bio_nik').text(bio.nik);
@@ -371,191 +404,124 @@
                 $('#bio_kecamatan').text(bio.kecamatan || '-');
                 $('#bio_kelurahan').text(bio.kelurahan || '-');
 
-                // 2. Render Tabel History (Fungsi Baru)
-                if (data.history) {
-                    renderHistoryTable(data.history);
-                } else {
-                    $('#historyTableBody').html('<tr><td colspan="8" class="text-center text-danger">Data history tidak ditemukan dari server.</td></tr>');
-                }
+                // B. Render Tabel
+                if (data.history) renderHistoryTable(data.history);
+                else $('#historyTableBody').html('<tr><td colspan="8" class="text-center text-danger">Data tidak ditemukan.</td></tr>');
 
-                // 3. Render Chart (Logika Lama)
+                // C. RENDER CHART (GRAFIK) - INI YANG KEMARIN HILANG
                 if (measurementChart) measurementChart.destroy();
-                const ctx = document.getElementById('measurementChart').getContext('2d');
-                measurementChart = new Chart(ctx, {
-                    type: 'line',
-                    data: {
-                        labels: data.chart_data.labels,
-                        datasets: [
-                            { label: 'Kolesterol', data: data.chart_data.cholesterol, borderColor: '#3498db', backgroundColor: 'rgba(52, 152, 219, 0.2)', tension: 0.1 },
-                            { label: 'Asam Urat', data: data.chart_data.uric_acid, borderColor: '#e67e22', backgroundColor: 'rgba(230, 126, 34, 0.2)', tension: 0.1 },
-                            { label: 'Gula Darah', data: data.chart_data.blood_sugar, borderColor: '#2ecc71', backgroundColor: 'rgba(46, 204, 113, 0.2)', tension: 0.1 }
-                        ]
-                    },
-                    options: { responsive: true, plugins: { title: { display: true, text: 'Grafik Riwayat Kesehatan' } } }
-                });
+                
+                const ctx = document.getElementById('measurementChart');
+                if (ctx) {
+                    measurementChart = new Chart(ctx.getContext('2d'), {
+                        type: 'line',
+                        data: {
+                            labels: data.chart_data.labels,
+                            datasets: [
+                                { label: 'Kolesterol', data: data.chart_data.cholesterol, borderColor: '#3498db', backgroundColor: 'rgba(52, 152, 219, 0.2)', tension: 0.1 },
+                                { label: 'Asam Urat', data: data.chart_data.uric_acid, borderColor: '#e67e22', backgroundColor: 'rgba(230, 126, 34, 0.2)', tension: 0.1 },
+                                { label: 'Gula Darah', data: data.chart_data.blood_sugar, borderColor: '#2ecc71', backgroundColor: 'rgba(46, 204, 113, 0.2)', tension: 0.1 }
+                            ]
+                        },
+                        options: { responsive: true, plugins: { title: { display: true, text: 'Grafik Riwayat Kesehatan' } } }
+                    });
+                }
             }).fail(function() {
-                alert("Gagal mengambil data pasien.");
                 $('#historyTableBody').html('<tr><td colspan="8" class="text-center text-danger">Gagal memuat data.</td></tr>');
             });
         }
 
-        // --- FUNGSI RENDER TABEL ---
+        // --- Helper Render Tabel ---
         function renderHistoryTable(data) {
             const tbody = $('#historyTableBody');
             tbody.empty();
-
             if (data.length === 0) {
-                tbody.html(`
-                    <tr>
-                        <td colspan="8" class="text-center py-4 text-muted">
-                            <i class="fas fa-info-circle fa-2x mb-2"></i><br>
-                            Tidak ada data riwayat pada periode ini.
-                        </td>
-                    </tr>
-                `);
+                tbody.html('<tr><td colspan="8" class="text-center py-4 text-muted">Tidak ada data.</td></tr>');
                 return;
             }
-
             data.forEach((item, index) => {
-                // Helper: Format nilai kosong
-                const val = (v) => (v && v > 0) ? `<strong>${v}</strong>` : `<span class="text-muted" style="opacity: 0.5;">-</span>`;
-                
-                // Format Tensi
-                let tensi = `<span class="text-muted" style="opacity: 0.5;">-</span>`;
-                if (item.blood_pressure_sys > 0 || item.blood_pressure_dia > 0) {
-                    let style = "font-weight: 500;";
-                    if (item.blood_pressure_sys >= 140 || item.blood_pressure_dia >= 90) style += "color: #e74c3c;";
-                    tensi = `<strong><span style="${style}">${item.blood_pressure_sys}/${item.blood_pressure_dia}</span></strong>`;
+                const val = (v) => (v && v > 0) ? `<strong>${v}</strong>` : `<span class="text-muted">-</span>`;
+                let tensi = `<span class="text-muted">-</span>`;
+                if (item.blood_pressure_sys > 0) {
+                    let color = (item.blood_pressure_sys >= 140 || item.blood_pressure_dia >= 90) ? "#e74c3c" : "#333";
+                    tensi = `<strong style="color:${color}">${item.blood_pressure_sys}/${item.blood_pressure_dia}</strong>`;
                 }
-
-                let dateDisplay = item.formatted_date;
-                if (dateDisplay && dateDisplay.includes(" ")) {
-                    const parts = dateDisplay.split(" ");
-                    dateDisplay = `
-                        <div style="line-height: 1.2;">
-                            <span style="font-weight: 500;">${parts[0]}</span><br>
-                        </div>
-                    `;
-                }
-
                 const row = `
                     <tr>
-                        <td class="align-middle"><div class="d-flex justify-content-center">${index + 1}</div></td>
-                        <td class="align-middle"><div class="d-flex justify-content-center text-center">${dateDisplay}</div></td>
-                        <td class="align-middle"><div class="d-flex justify-content-center">${val(item.cholesterol_value)}</div></td>
-                        <td class="align-middle"><div class="d-flex justify-content-center">${val(item.uric_acid_value)}</div></td>
-                        <td class="align-middle"><div class="d-flex justify-content-center">${val(item.blood_sugar_value)}</div></td>
-                        <td class="align-middle"><div class="d-flex justify-content-center">${tensi}</div></td>
-                        <td class="align-middle"><div class="d-flex justify-content-center">${val(item.height)}</div></td>
-                        <td class="align-middle"><div class="d-flex justify-content-center">${val(item.weight)}</div></td>
-                    </tr>
-                `;
+                        <td class="text-center">${index + 1}</td>
+                        <td class="text-center">${item.formatted_date.replace(" ", "<br>")}</td>
+                        <td class="text-center">${val(item.cholesterol_value)}</td>
+                        <td class="text-center">${val(item.uric_acid_value)}</td>
+                        <td class="text-center">${val(item.blood_sugar_value)}</td>
+                        <td class="text-center">${tensi}</td>
+                        <td class="text-center">${val(item.height)}</td>
+                        <td class="text-center">${val(item.weight)}</td>
+                    </tr>`;
                 tbody.append(row);
             });
         }
 
-        // --- EVENT HANDLERS (LIST & DETAIL) ---
+        // --- FILTER & NAVIGATION ---
+        function applyGlobalFilter() {
+            let q = $('#globalSearchInput').val();
+            let s = $('#globalStartDate').val();
+            let e = $('#globalEndDate').val();
+            let url = `{{ url_for('data_pengukuran') }}?`;
+            if (q) url += `q=${encodeURIComponent(q)}&`;
+            if (s) url += `start_date=${s}&`;
+            if (e) url += `end_date=${e}`;
+            window.location.href = url;
+        }
 
-        // Klik Baris Pasien
+        $('#btnGlobalFilter').click(applyGlobalFilter);
+        $('#globalSearchInput').keypress(function(e) { if(e.which == 13) applyGlobalFilter(); });
+        $('#btnGlobalReset').click(function() { window.location.href = `{{ url_for('data_pengukuran') }}`; });
+
+        const listView = $("#patientListView");
+        const detailView = $("#patientDetailView");
+
         $('.patient-row').on('click', function(e) {
-            // Cegah klik tombol di dalam row memicu detail view
             if ($(e.target).is('input, a') || $(e.target).closest('a').length > 0) return;
-            
             const pid = $(this).data('patient-id');
-            listView.hide();
-            detailView.show();
-            // Reset filter detail saat dibuka
-            $('#startDateFilter').val('');
-            $('#endDateFilter').val('');
+            listView.hide(); detailView.show();
+            $('#startDateFilter').val(''); $('#endDateFilter').val('');
             loadPatientData(pid);
         });
 
-        // Tombol Filter Preset (DETAIL)
+        $('#backToListBtn').on('click', function() { detailView.hide(); listView.show(); });
+
         $('.btn-filter[data-range]').on('click', function() {
             const range = $(this).data('range');
-            const end = new Date();
-            let start = new Date();
+            const end = new Date(); let start = new Date();
             end.setHours(23, 59, 59, 999); 
-
-            if (range === 'today') {
-                start.setHours(0, 0, 0, 0);
-            } else if (range === 'week') {
-                start.setDate(end.getDate() - 7);
-            } else if (range === 'month') {
-                start.setMonth(end.getMonth() - 1);
-            }
-
-            const offset = start.getTimezoneOffset() * 60000;
-            const localStart = new Date(start.getTime() - offset);
-            const localEnd = new Date(end.getTime() - offset);
-
-            const sStr = localStart.toISOString().slice(0, 10);
-            const eStr = localEnd.toISOString().slice(0, 10);
+            if (range === 'today') start.setHours(0, 0, 0, 0);
+            else if (range === 'week') start.setDate(end.getDate() - 7);
+            else if (range === 'month') start.setMonth(end.getMonth() - 1);
             
-            $('#startDateFilter').val(sStr);
-            $('#endDateFilter').val(eStr);
-
+            const offset = start.getTimezoneOffset() * 60000;
+            const sStr = new Date(start.getTime() - offset).toISOString().slice(0, 10);
+            const eStr = new Date(end.getTime() - offset).toISOString().slice(0, 10);
+            $('#startDateFilter').val(sStr); $('#endDateFilter').val(eStr);
             loadPatientData(currentPatientId, sStr + " 00:00:00", eStr + " 23:59:59");
         });
 
-        // Tombol Terapkan Filter Manual (DETAIL)
         $('#btnApplyFilter').on('click', function() {
-            let s = $('#startDateFilter').val();
-            let e = $('#endDateFilter').val();
-            if(s && e) {
-                loadPatientData(currentPatientId, s + " 00:00:00", e + " 23:59:59");
-            } else {
-                alert("Pilih tanggal mulai dan selesai.");
-            }
+            let s = $('#startDateFilter').val(); let e = $('#endDateFilter').val();
+            if(s && e) loadPatientData(currentPatientId, s + " 00:00:00", e + " 23:59:59");
+            else alert("Pilih tanggal mulai dan selesai.");
         });
 
-        // Tombol Reset Filter (DETAIL)
         $('#btnResetFilter').on('click', function() {
-            $('#startDateFilter').val('');
-            $('#endDateFilter').val('');
+            $('#startDateFilter').val(''); $('#endDateFilter').val('');
             loadPatientData(currentPatientId);
         });
 
-        // Tombol Kembali
-        $('#backToListBtn').on('click', function() { detailView.hide(); listView.show(); });
-
-        // Upload Data Pasien Ini (DETAIL)
-        $('#btnUploadCurrentPatient').on('click', function() {
-            const btn = $(this);
-            const originalText = btn.html();
-            
-            let s = $('#startDateFilter').val();
-            let e = $('#endDateFilter').val();
-            let payload = {};
-            
-            if (s && e) {
-                payload = { start_date: s + " 00:00:00", end_date: e + " 23:59:59" };
-            }
-
-            if(confirm("Upload data yang sedang ditampilkan ke server?")) {
-                btn.prop('disabled', true).text('Mengirim...');
-                
-                $.ajax({
-                    url: `/upload_patient_data/${currentPatientId}`,
-                    method: 'POST',
-                    contentType: 'application/json',
-                    data: JSON.stringify(payload),
-                    success: function(res) { alert(res.message); },
-                    error: function(err) { alert("Gagal upload: " + (err.responseJSON ? err.responseJSON.message : err.statusText)); },
-                    complete: function() { btn.prop('disabled', false).html(originalText); }
-                });
-            }
-        });
-
-        // --- EDIT & DELETE (Modal Logic) ---
+        // Edit & Delete Handlers
         const editModal = $("#editPatientModal");
-
         $(".action-btn-edit").on("click", function (e) {
             e.preventDefault(); e.stopPropagation();
-            const row = $(this).closest(".patient-row");
-            const patientId = row.data("patient-id");
-
-            $.getJSON(`/api/patient/${patientId}`, function (data) {
+            const pid = $(this).closest(".patient-row").data("patient-id");
+            $.getJSON(`/api/patient/${pid}`, function (data) {
                 $("#edit_patient_id").val(data.id);
                 $("#edit_nama_lengkap").val(data.nama_lengkap);
                 $("#edit_jenis_kelamin").val(data.jenis_kelamin);
@@ -570,22 +536,16 @@
 
         $("#editPatientForm").on("submit", function (e) {
             e.preventDefault();
-            const patientId = $(this).data("patient-id");
-            const formData = $(this).serialize();
-
+            const pid = $(this).data("patient-id");
             $.ajax({
-                url: `/patient/edit/${patientId}`,
-                method: "POST",
-                data: formData,
-                success: function (response) {
-                    if (response.status === "success") {
-                        editModal.hide();
-                        showNotification(response.message, "success");
-                        const updatedName = $("#edit_nama_lengkap").val();
-                        $(`.patient-row[data-patient-id=${patientId}] .patient-name`).text(updatedName);
+                url: `/patient/edit/${pid}`, method: "POST", data: $(this).serialize(),
+                success: function (res) {
+                    if (res.status === "success") {
+                        editModal.hide(); 
+                        alert(res.message);
+                        $(`.patient-row[data-patient-id=${pid}] .patient-name`).text($("#edit_nama_lengkap").val());
                     }
-                },
-                error: function () { showNotification("Gagal memperbarui data.", "danger"); }
+                }, error: function () { alert("Gagal memperbarui data."); }
             });
         });
 
@@ -594,51 +554,33 @@
         $(".action-btn-delete").on("click", function (e) {
             e.preventDefault(); e.stopPropagation();
             const row = $(this).closest(".patient-row");
-            const patientId = row.data("patient-id");
-            const patientName = row.data("patient-name");
-            $("#deletePatientName").text(patientName);
+            $("#deletePatientName").text(row.data("patient-name"));
             $("#deleteConfirmModal").css("display", "flex");
-            $("#btnConfirmDelete").data("patient-id", patientId).data("row-element", row);
+            $("#btnConfirmDelete").data("patient-id", row.data("patient-id")).data("row-element", row);
         });
 
         $("#btnConfirmDelete").on("click", function () {
-            const patientId = $(this).data("patient-id");
             const row = $(this).data("row-element");
             $.ajax({
-                url: `/patient/delete/${patientId}`,
-                method: "POST",
-                success: function (response) {
-                    if (response.status === "success") {
-                        showNotification(response.message, "success");
+                url: `/patient/delete/${$(this).data("patient-id")}`, method: "POST",
+                success: function (res) {
+                    if (res.status === "success") {
+                        alert(res.message);
                         row.fadeOut(500, function () { $(this).remove(); });
                     }
-                },
-                complete: function () { $("#deleteConfirmModal").hide(); }
+                }, complete: function () { $("#deleteConfirmModal").hide(); }
             });
         });
 
         $("#btnCancelDelete").on("click", function () { $("#deleteConfirmModal").hide(); });
 
-        // Helper Notification
-        function showNotification(message, category) {
-            const flashMessage = $("<div></div>").addClass(`flash-message flash-${category}`).text(message);
-            $(".flash-messages-container").append(flashMessage);
-            setTimeout(() => {
-                flashMessage.fadeOut(500, function () { $(this).remove(); });
-            }, 5000);
-        }
-
-        // Export Selected Logic
-        const exportSelectedBtn = $("#exportSelectedBtn");
         $(".patient-checkbox").on("change", function () {
-            const selectedCheckboxes = $(".patient-checkbox:checked");
-            if (selectedCheckboxes.length > 0) {
-                const selectedIds = selectedCheckboxes.map(function () { return $(this).val(); }).get();
-                const exportUrl = `{{ url_for('export_selected') }}?ids=${selectedIds.join(",")}`;
-                exportSelectedBtn.attr("href", exportUrl).removeClass("disabled");
-            } else {
-                exportSelectedBtn.removeAttr("href").addClass("disabled");
-            }
+            const checked = $(".patient-checkbox:checked");
+            const btn = $("#exportSelectedBtn");
+            if (checked.length > 0) {
+                const ids = checked.map(function () { return $(this).val(); }).get();
+                btn.attr("href", `{{ url_for('export_selected') }}?ids=${ids.join(",")}`).removeClass("disabled");
+            } else btn.removeAttr("href").addClass("disabled");
         });
     });
 </script>

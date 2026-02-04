@@ -845,6 +845,83 @@ def wifi_connect():
         return jsonify({'status': 'success', 'message': f'Terhubung ke {ssid}'})
     except:
         return jsonify({'status': 'error', 'message': 'Gagal koneksi WiFi.'})
+    
+
+# --- 7. API PENCARIAN WILAYAH (AUTOCOMPLETE) ---
+# --- 7. API PENCARIAN WILAYAH (AUTOCOMPLETE CERDAS) ---
+@app.route('/api/search_wilayah')
+def search_wilayah():
+    if g.user is None: return jsonify([])
+    
+    category = request.args.get('category') 
+    query = request.args.get('q', '')
+    
+    if len(query) < 2: return jsonify([]) # Minimal 2 huruf
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+    
+    results = []
+    
+    try:
+        if category == 'kelurahan':
+            # --- LOGIKA KHUSUS KELURAHAN (JOIN KECAMATAN) ---
+            # Kita ambil Nama Kelurahan DAN Nama Kecamatan sekaligus
+            sql = """
+                SELECT k.nama, c.nama 
+                FROM master_kelurahans k
+                JOIN master_kecamatans c ON k.kode_parent = c.kode_kecamatan
+                WHERE k.nama ILIKE %s 
+                ORDER BY k.nama ASC LIMIT 15
+            """
+            cur.execute(sql, (f'%{query}%',))
+            rows = cur.fetchall()
+            
+            # Format return: [{'nama': 'Bulusan', 'kecamatan': 'Tembalang'}, ...]
+            for r in rows:
+                results.append({
+                    'nama': r[0],
+                    'kecamatan': r[1]  # Data tambahan untuk auto-fill
+                })
+
+        elif category == 'kecamatan':
+            sql = "SELECT nama FROM master_kecamatans WHERE nama ILIKE %s ORDER BY nama ASC LIMIT 15"
+            cur.execute(sql, (f'%{query}%',))
+            rows = cur.fetchall()
+            for r in rows: results.append({'nama': r[0]})
+
+        elif category == 'provinsi':
+            sql = "SELECT nama FROM master_provinsis WHERE nama ILIKE %s ORDER BY nama ASC LIMIT 15"
+            cur.execute(sql, (f'%{query}%',))
+            rows = cur.fetchall()
+            for r in rows: results.append({'nama': r[0]})
+
+    except Exception as e:
+        print(f"Error search wilayah: {e}")
+    finally:
+        cur.close(); conn.close()
+        
+    return jsonify(results)
+    
+@app.route('/api/puskesmas_list')
+def get_puskesmas_list():
+    if g.user is None: return jsonify([])
+    
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        # Mengambil kolom 'nama' sesuai struktur tabel puskesmas.sql
+        cur.execute("SELECT nama FROM puskesmas ORDER BY nama ASC")
+        rows = cur.fetchall()
+        # Ubah jadi list simple: ['Bandarharjo', 'Bangetayu', ...]
+        result = [r[0] for r in rows]
+    except Exception as e:
+        print(f"Error ambil puskesmas: {e}")
+        result = []
+    finally:
+        cur.close(); conn.close()
+        
+    return jsonify(result)
 
 # --- [UPDATE] ROUTE UPLOAD DATA (Support Filter Lengkap) ---
 @app.route('/upload_data', methods=['POST'])
@@ -853,8 +930,15 @@ def upload_data():
     Upload data ke API Dinkes.
     Mengirim data satu per satu (per row) untuk menghindari error validasi array.
     """
-    if g.user is None:
-        return jsonify({'status': 'error', 'message': 'Akses ditolak'}), 401
+    if g.user is None: return jsonify({'status': 'error', 'message': 'Akses ditolak'}), 401
+    
+    req_data = request.json or {}
+    # Ambil Puskesmas yang dipilih dari Frontend
+    selected_puskesmas = req_data.get('puskesmas') 
+    
+    # Validasi Wajib Pilih
+    if not selected_puskesmas:
+        return jsonify({'status': 'error', 'message': 'Mohon pilih Puskesmas tujuan terlebih dahulu.'}), 400
     
     # Ambil Filter dari Request
     req_data = request.json or {}
@@ -905,7 +989,8 @@ def upload_data():
 
     if not all_data:
         return jsonify({'status': 'warning', 'message': 'Tidak ada data ditemukan untuk kriteria ini.'}), 404
-
+    
+    api_key = os.getenv("API_KEY_DINKES")
     # Ambil URL & API Key
     external_api_url = get_active_api_url()
     if not external_api_url:
@@ -914,7 +999,7 @@ def upload_data():
     headers = {
         "Content-Type": "application/json",
         "Accept": "application/json",
-        "X-API-Key": "awp3UzktboyKlJAkHdPgxawdxhMTyFKPoFIzJcXirPL3NaRsf5QSP7SZrheXxVgP"
+        "X-API-Key": api_key
     }
 
     success_count = 0
@@ -941,7 +1026,7 @@ def upload_data():
             item_payload = {
                 "nama_pasien": row[0],
                 "id_koper": "koper_01",
-                "puskesmas": "Puskesmas Contoh",
+                "puskesmas": selected_puskesmas,
                 "nik": row[1],
                 "jenis_kelamin": row[2],
                 # "tanggal_lahir": tgl_lahir.isoformat() if tgl_lahir else None,
@@ -1096,6 +1181,7 @@ def handle_save_session(data):
         conn.close()
 
 # --- ROUTE PENCARIAN PASIEN (FIX 404) ---
+
 # --- 2. UPDATE PENCARIAN (Ambil Kelurahan) ---
 @app.route('/api/search_patients')
 def search_patients():
@@ -1277,15 +1363,18 @@ def upload_patient_data(patient_id):
     data = request.json or {}
     start_date = data.get('start_date')
     end_date = data.get('end_date')
+    
+    # --- [UPDATE] 1. Ambil Pilihan Puskesmas dari Frontend ---
+    selected_puskesmas = data.get('puskesmas')
+    
+    # --- [UPDATE] 2. Validasi Wajib Pilih ---
+    if not selected_puskesmas:
+        return jsonify({'status': 'error', 'message': 'Mohon pilih Puskesmas tujuan terlebih dahulu.'}), 400
 
     conn = get_db_connection()
     cur = conn.cursor()
     
-    # --- UPDATE QUERY: Urutan kolom disamakan dengan upload_data agar index payload sesuai ---
-    # Index: 
-    # 0:nama, 1:nik, 2:jk, 3:tgl_lahir, 4:prov, 5:kel, 6:kec, 7:alamat, 
-    # 8:tgl_ukur, 9:chol, 10:ua, 11:gula, 
-    # 12:height, 13:weight, 14:sys, 15:dia
+    # Query Data (Urutan kolom sesuai standar API)
     query = """
         SELECT 
             p.nama_lengkap, p.nik, p.jenis_kelamin, p.tanggal_lahir, 
@@ -1316,12 +1405,14 @@ def upload_patient_data(patient_id):
     
     if not external_api_url:
         return jsonify({'status': 'error', 'message': 'URL API belum disetting.'}), 500
+    
+    api_key = os.getenv("API_KEY_DINKES")
 
     # Konfigurasi Headers & API Key
     headers = {
         "Content-Type": "application/json",
         "Accept": "application/json",
-        "X-API-Key": "awp3UzktboyKlJAkHdPgxawdxhMTyFKPoFIzJcXirPL3NaRsf5QSP7SZrheXxVgP"
+        "X-API-Key": api_key
     }
 
     success_count = 0
@@ -1330,25 +1421,20 @@ def upload_patient_data(patient_id):
 
     print(f"Memulai upload {len(rows)} data pasien {patient_id} ke: {external_api_url}")
 
-    # --- LOOPING KIRIM DATA SATU PER SATU (Agar format JSON Object, bukan List) ---
+    # --- LOOPING KIRIM DATA ---
     for row in rows:
         try:
             tgl_lahir = row[3]
-            # Gunakan calculate_age_detail sesuai request
             umur_val = calculate_age_detail(tgl_lahir) 
-            
-            # Konversi Waktu (UTC -> WIB)
             waktu_utc = row[8]
             waktu_wib = waktu_utc + timedelta(hours=7)
 
-            # Buat Payload SATUAN (Objek Dictionary)
             item_payload = {
                 "nama_pasien": row[0],
                 "id_koper": "koper_01",
-                "puskesmas": "Puskesmas Contoh",
+                "puskesmas": selected_puskesmas, # <--- [UPDATE] Gunakan variabel dinamis
                 "nik": str(row[1]),
                 "jenis_kelamin": row[2],
-                # "tanggal_lahir": tgl_lahir.isoformat() if tgl_lahir else None,
                 "umur": umur_val,
                 "provinsi": row[4],
                 "kota": "Semarang",
@@ -1365,27 +1451,25 @@ def upload_patient_data(patient_id):
                 "tensi_dia": row[15]
             }
 
-            # Kirim Request Per Item
+            # Kirim Request
             response = requests.post(external_api_url, json=item_payload, headers=headers, timeout=10)
             
             if response.status_code in [200, 201]:
                 success_count += 1
             else:
                 fail_count += 1
-                # Simpan pesan error ringkas
                 errors_log.append(f"Data {waktu_wib}: {response.text[:100]}")
 
         except Exception as e:
             fail_count += 1
             errors_log.append(f"Error Script: {str(e)}")
 
-    # Buat Laporan Akhir
+    # Laporan Akhir
     if success_count > 0 and fail_count == 0:
         return jsonify({'status': 'success', 'message': f'Sukses mengunggah {success_count} data!'})
     elif success_count > 0 and fail_count > 0:
         return jsonify({'status': 'warning', 'message': f'Selesai parsial. Sukses: {success_count}, Gagal: {fail_count}. Cek log server.'})
     else:
-        # Jika gagal semua
         err_msg = errors_log[0] if errors_log else "Unknown Error"
         return jsonify({'status': 'error', 'message': f'Gagal upload semua data. Error: {err_msg}'}), 500
 

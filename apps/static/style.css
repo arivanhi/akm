@@ -17,6 +17,150 @@ body {
 }
 
 /* =============================================== */
+/* REVISI: Select2 & Tombol Modal Puskesmas        */
+/* =============================================== */
+
+/* Wrapper Input agar posisi dropdown relatif terhadap input ini */
+.ac-wrapper {
+    position: relative !important;
+    width: 100% !important;
+    display: block !important;
+}
+
+/* Input Field Autocomplete (Opsional: jika ingin styling khusus) */
+.ac-input {
+    width: 100%;
+    /* Styling standar bootstrap form-control */
+}
+
+/* Container Dropdown Hasil Pencarian */
+.ac-list-container {
+    position: absolute;
+    top: 100%; /* Muncul persis di bawah input */
+    left: 0;
+    right: 0;
+    z-index: 99999; /* Layer paling atas */
+    
+    background-color: #ffffff;
+    border: 1px solid #007bff; /* Border biru */
+    border-top: none;
+    border-radius: 0 0 8px 8px;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+    
+    max-height: 250px; /* Batas tinggi scroll */
+    overflow-y: auto;
+    display: none; /* Default sembunyi */
+    text-align: left; /* Teks rata kiri */
+}
+
+/* Item dalam Dropdown */
+.ac-item {
+    padding: 12px 15px;
+    cursor: pointer;
+    background-color: #fff;
+    border-bottom: 1px solid #f1f1f1;
+    font-size: 0.95rem;
+    color: #333;
+    transition: background-color 0.1s;
+}
+
+.ac-item:hover {
+    background-color: #e9ecef; /* Abu terang saat hover */
+}
+
+.ac-item strong {
+    color: #007bff; /* Highlight biru */
+    font-weight: 700;
+}
+
+/* Indikator Loading (Spinner dalam Input) */
+.ac-loading {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cpath fill='%23ccc' d='M12,1A11,11,0,1,0,23,12,11,11,0,0,0,12,1Zm0,19a8,8,0,1,1,8-8A8,8,0,0,1,12,20Z' opacity='.25'/%3E%3Cpath fill='%23007bff' d='M12,4a8,8,0,0,1,7.89,6.7A1.53,1.53,0,0,0,21.38,12h0a1.5,1.5,0,0,0,1.48-1.75,11,11,0,0,0-21.72,0A1.5,1.5,0,0,0,2.62,12h0a1.53,1.53,0,0,0,1.49-1.3A8,8,0,0,1,12,4Z'%3E%3CanimateTransform attributeName='transform' type='rotate' dur='0.75s' from='0 12 12' to='360 12 12' repeatCount='indefinite'/%3E%3C/path%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+    background-size: 20px;
+}
+
+.autocomplete-items {
+        position: absolute;
+        border: 1px solid #d4d4d4;
+        border-bottom: none;
+        border-top: none;
+        z-index: 99;
+        top: 100%;
+        left: 0;
+        right: 0;
+        background-color: #fff;
+        text-align: left; /* KUNCI: Memaksa teks rata kiri */
+        border-radius: 0 0 6px 6px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        max-height: 200px;
+        overflow-y: auto;
+    }
+    
+    .autocomplete-items div {
+        padding: 12px;
+        cursor: pointer;
+        background-color: #fff;
+        border-bottom: 1px solid #d4d4d4;
+    }
+    
+    .autocomplete-items div:hover {
+        background-color: #e9e9e9;
+    }
+    
+    .autocomplete-items div strong {
+        color: #007bff; /* Highlight warna biru untuk teks yang cocok */
+    }
+
+/* 2. Styling Khusus Tombol Modal Puskesmas */
+
+/* Tombol Batal: Putih dengan Border Abu */
+.btn-custom-cancel {
+    background-color: #e84242;
+    color: #333333;
+    border: 1px solid #ced4da;
+    padding: 10px 20px;
+    border-radius: 6px;
+    font-weight: 500;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: all 0.2s ease-in-out;
+}
+
+.btn-custom-cancel:hover {
+    background-color: #f1f3f5;
+    border-color: #adb5bd;
+}
+
+/* Tombol Kirim: Biru Terang Solid */
+.btn-custom-confirm {
+    background-color: #007bff; /* Biru standar */
+    color: #ffffff;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 6px;
+    font-weight: 500;
+    font-size: 1rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: all 0.2s ease-in-out;
+    box-shadow: 0 2px 4px rgba(0, 123, 255, 0.2);
+}
+
+.btn-custom-confirm:hover {
+    background-color: #0056b3;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 6px rgba(0, 123, 255, 0.3);
+}
+
+.btn-custom-confirm:active {
+    transform: translateY(0);
+}
+
+/* =============================================== */
 /* REVISI: Warna Card Sesuai Strip (Full Color)    */
 /* =============================================== */
 
