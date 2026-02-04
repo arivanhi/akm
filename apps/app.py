@@ -57,6 +57,7 @@ socketio = SocketIO(app, async_mode='threading')
 active_patient_id = None # Variabel global untuk melacak pasien aktif
 active_patient_name = None
 ble_is_connected = False
+printer_instance = None
 print("Memuat model Machine Learning...")
 models_xgb = {}
 models_knn = {}
@@ -83,6 +84,36 @@ try:
 except Exception as e:
     print(f"!!! ERROR memuat model: {e}")
     print("Pastikan Anda sudah menjalankan script 'train_..._regression.py' untuk semua tipe.")
+    
+def init_printer_connection():
+    global printer_instance
+    try:
+        # Jika ada koneksi lama, tutup dulu (opsional, untuk safety)
+        if printer_instance:
+            try:
+                printer_instance.close() # Sesuaikan method close library Anda
+            except:
+                pass
+        
+        # --- GANTI BAGIAN INI SESUAI SETTINGAN PRINTER ANDA ---
+        # Contoh menggunakan USB (Ganti ID Vendor & Product sesuai printer Anda)
+        printer_instance = Usb(0x0416, 0x5011, 0, 0x81, 0x03)
+        
+        # Contoh Serial (jika pakai Serial)
+        # from escpos.printer import Serial
+        # printer_instance = Serial(devfile='/dev/ttyUSB0', baudrate=9600)
+        
+        # Simulasi koneksi sukses (Hapus baris ini jika sudah isi kodingan asli)
+        print("Mencoba menghubungkan printer...")
+        # printer_instance = ... (Codingan Asli Anda)
+        
+        print("-> [PRINTER] Berhasil Terhubung!")
+        return True
+        
+    except Exception as e:
+        print(f"-> [PRINTER] Gagal Konek: {e}")
+        printer_instance = None
+        return False
 
 # =================================================================
 def setup_bluetooth_connection():
@@ -443,6 +474,8 @@ def calculate_age_years(dob):
         dob = datetime.strptime(dob, '%Y-%m-%d').date()
     return today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
 
+init_printer_connection()
+
 
 # --- Routes & API Endpoints (Tidak Berubah) ---
 # (Semua @app.route Anda dari kode sebelumnya diletakkan di sini)
@@ -633,50 +666,64 @@ def input_pasien():
 def print_receipt():
     if g.user is None:
         return jsonify({'status': 'error', 'message': 'Unauthorized'}), 401
+    
+    global printer_instance
+    
+    # 1. Cek Koneksi Global
+    if printer_instance is None:
+        print("Printer putus, mencoba konek otomatis...")
+        init_printer_connection()
+        
+    if printer_instance is None:
+        return jsonify({'status': 'error', 'message': 'Printer tidak terdeteksi.'}), 500
 
     data = request.json
     
     try:
-        # p = Serial(devfile=PORT, baudrate=BAUDRATE, ...)
-        p = Usb(0x0416, 0x5011, 0, 0x81, 0x03) # Sesuaikan konfigurasi printer Anda
-
-        p.set(align='center')
-        p.text("Hasil Pemeriksaan Kesehatan\n")
-        p.text("================================\n")
+        # --- PERBAIKAN DI SINI ---
+        # JANGAN buat instance baru (p = Usb...), gunakan 'printer_instance'
         
-        p.set(align='left')
-        p.text(f"Nama    : {data.get('nama')}\n")
-        p.text(f"Tanggal : {data.get('tanggal')}\n")
-        p.text("--------------------------------\n")
+        # Gunakan printer_instance langsung
+        printer_instance.set(align='center')
+        printer_instance.text("Hasil Pemeriksaan Kesehatan\n")
+        printer_instance.text("================================\n")
+        
+        printer_instance.set(align='left')
+        printer_instance.text(f"Nama    : {data.get('nama')}\n")
+        printer_instance.text(f"Tanggal : {data.get('tanggal')}\n")
+        printer_instance.text("--------------------------------\n")
 
         results = data.get('hasil', [])
         for res in results:
             tipe = res['tipe']
             nilai = res['nilai']
-            status = res.get('status', '') # Ambil status (bisa kosong untuk BB/TB)
+            status = res.get('status', '')
             
-            p.set(bold=True)
-            p.text(f"{tipe}: {nilai}\n")
-            p.set(bold=False)
+            printer_instance.set(bold=True)
+            printer_instance.text(f"{tipe}: {nilai}\n")
+            printer_instance.set(bold=False)
             
-            # Hanya print status jika ada isinya
             if status and status != '-':
-                p.text(f"Status : {status}\n")
+                printer_instance.text(f"Status : {status}\n")
             
-            p.text("\n") # Spasi antar item
+            printer_instance.text("\n")
 
-        p.set(align='center')
-        p.text("--------------------------------\n")
-        p.text("Terima Kasih\n")
-        p.text("Semoga Sehat Selalu\n")
-        p.text("\n\n\n") 
+        printer_instance.set(align='center')
+        printer_instance.text("--------------------------------\n")
+        printer_instance.text("Terima Kasih\n")
+        printer_instance.text("Semoga Sehat Selalu\n")
+        printer_instance.text("\n\n\n") 
         
-        p.close() 
+        # JANGAN panggil printer_instance.close() disini.
+        # Biarkan koneksi tetap terbuka untuk print berikutnya.
 
         return jsonify({'status': 'success', 'message': 'Struk berhasil dicetak!'})
 
     except Exception as e:
         print(f"Error Printer: {e}")
+        # Jika terjadi error saat print (misal kabel ditarik paksa saat ngeprint),
+        # baru kita kosongkan instance agar nanti direstart ulang.
+        printer_instance = None 
         return jsonify({'status': 'error', 'message': 'Gagal mencetak. Cek koneksi printer.'}), 500
     
 @app.route('/settings')
@@ -757,22 +804,40 @@ def save_api_url():
         cur.close()
         conn.close()
         
-@app.route('/api/hardware/test_print', methods=['POST'])
-def test_print_dummy():
-    if g.user is None: return jsonify({'status':'error'}), 401
+# --- ROUTE DEBUG: TEST PRINT SEDERHANA ---
+@app.route('/api/debug/test_print', methods=['POST'])
+def debug_test_print():
+    global printer_instance
+    
+    # Cek koneksi
+    if printer_instance is None:
+        # Coba konek otomatis jika belum ada
+        if not init_printer_connection():
+            return jsonify({'status': 'error', 'message': 'Printer tidak terhubung. Silakan klik tombol Hubungkan Ulang.'}), 500
+
     try:
-        # Sesuaikan konfigurasi printer Anda
-        # p = Serial(devfile='/dev/rfcomm0', baudrate=9600) 
-        p = Usb(0x0416, 0x5011, 0, 0x81, 0x03) 
+        # --- PERINTAH CETAK SEDERHANA (ESC/POS) ---
+        # Sesuaikan dengan library yang Anda pakai (python-escpos)
         
-        p.set(align='center')
-        p.text("TEST PRINT SYSTEM\n")
-        p.text("----------------\n")
-        p.text("Printer OK.\n\n\n")
-        p.close()
-        return jsonify({'status': 'success', 'message': 'Test print berhasil.'})
+        printer_instance.set(align='center')
+        printer_instance.text("\n")
+        printer_instance.text("================================\n")
+        printer_instance.text("TES KONEKSI PRINTER\n")
+        printer_instance.text("BERHASIL\n")
+        printer_instance.text("================================\n")
+        printer_instance.text(f"Waktu: {datetime.now().strftime('%d-%m-%Y %H:%M')}\n")
+        printer_instance.text("\n\n\n") # Feed kertas
+        
+        # Potong kertas (jika didukung)
+        # printer_instance.cut() 
+        
+        return jsonify({'status': 'success', 'message': 'Test Print Terkirim!'})
+        
     except Exception as e:
-        return jsonify({'status': 'error', 'message': f'Error Printer: {str(e)}'}), 500
+        print(f"Error Test Print: {e}")
+        # Jika error (misal kabel putus saat cetak), reset instance
+        printer_instance = None 
+        return jsonify({'status': 'error', 'message': f'Gagal mencetak: {str(e)}'}), 500
 
 @app.route('/api/hardware/bt_status')
 def bt_status():
@@ -1732,6 +1797,17 @@ def system_shutdown():
             return jsonify({'status': 'success', 'message': 'Sistem dimatikan (Metode 2).'})
         except Exception as e2:
             return jsonify({'status': 'error', 'message': f'Gagal shutdown: {str(e2)}'}), 500
+        
+@app.route('/api/debug/restart_printer', methods=['POST'])
+def debug_restart_printer():
+    if g.user is None: return jsonify({'status': 'error', 'message': 'Unauthorized'}), 401
+    
+    success = init_printer_connection()
+    
+    if success:
+        return jsonify({'status': 'success', 'message': 'Printer berhasil terhubung ulang!'})
+    else:
+        return jsonify({'status': 'error', 'message': 'Gagal menghubungkan printer. Pastikan kabel terpasang dan printer menyala.'})
 
 @app.route('/add_user', methods=['GET', 'POST'])
 def add_user():

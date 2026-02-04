@@ -200,7 +200,7 @@
                     <thead class="thead-light" style="position: sticky; top: 0; z-index: 1020;">
                         <tr>
                             <th class="text-center align-middle py-3" style="background-color: #e9ecef; width: 50px;">No</th>
-                            <th class="text-center align-middle py-3" style="background-color: #e9ecef;">Tanggal & Waktu</th>
+                            <th class="text-center align-middle py-3" style="background-color: #e9ecef;">Tanggal</th>
                             <th class="text-center align-middle py-3" style="background-color: #e9ecef;">Kolesterol<br><span class="text-muted" style="font-size: 0.85em; font-weight: normal;">(mg/dL)</span></th>
                             <th class="text-center align-middle py-3" style="background-color: #e9ecef;">Asam Urat<br><span class="text-muted" style="font-size: 0.85em; font-weight: normal;">(mg/dL)</span></th>
                             <th class="text-center align-middle py-3" style="background-color: #e9ecef;">Gula Darah<br><span class="text-muted" style="font-size: 0.85em; font-weight: normal;">(mg/dL)</span></th>
@@ -432,24 +432,33 @@
         }
 
         // --- Helper Render Tabel ---
+        // --- Helper Render Tabel ---
         function renderHistoryTable(data) {
             const tbody = $('#historyTableBody');
             tbody.empty();
+            
             if (data.length === 0) {
                 tbody.html('<tr><td colspan="8" class="text-center py-4 text-muted">Tidak ada data.</td></tr>');
                 return;
             }
+            
             data.forEach((item, index) => {
                 const val = (v) => (v && v > 0) ? `<strong>${v}</strong>` : `<span class="text-muted">-</span>`;
+                
                 let tensi = `<span class="text-muted">-</span>`;
                 if (item.blood_pressure_sys > 0) {
                     let color = (item.blood_pressure_sys >= 140 || item.blood_pressure_dia >= 90) ? "#e74c3c" : "#333";
                     tensi = `<strong style="color:${color}">${item.blood_pressure_sys}/${item.blood_pressure_dia}</strong>`;
                 }
+
+                // [UPDATE] Hapus Waktu, Ambil Tanggal Saja
+                // Format dari server: "dd-mm-yyyy HH:MM" -> Split spasi -> Ambil index 0
+                let dateOnly = item.formatted_date.split(" ")[0];
+
                 const row = `
                     <tr>
                         <td class="text-center">${index + 1}</td>
-                        <td class="text-center">${item.formatted_date.replace(" ", "<br>")}</td>
+                        <td class="text-center font-weight-bold">${dateOnly}</td> 
                         <td class="text-center">${val(item.cholesterol_value)}</td>
                         <td class="text-center">${val(item.uric_acid_value)}</td>
                         <td class="text-center">${val(item.blood_sugar_value)}</td>

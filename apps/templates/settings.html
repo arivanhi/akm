@@ -61,17 +61,53 @@
 
 <div class="form-container">
     <h3>Cek Hardware</h3>
-    <div style="display: flex; align-items: center; margin-bottom: 25px; border-bottom: 1px solid #eee; padding-bottom: 20px;">
-        <div style="width: 180px; font-weight: 600;">Test Print</div>
-        <div>
-            <button id="btnPrintDummy" class="btn-submit" style="background-color: #fff; color: #333; border: 1px solid #ccc; font-weight: 500;">Print Dummy</button>
+    <div class="settings-grid">
+        <div class="settings-card printer">
+            <div>
+                <div class="settings-header">
+                    <div class="settings-icon-wrapper">
+                        <i class="fas fa-print"></i>
+                    </div>
+                    <div class="settings-title">
+                        <h4>Printer Thermal</h4>
+                        <p>Status & Koneksi Printer Struk</p>
+                    </div>
+                </div>
+                <p style="font-size: 0.9rem; color: #666; line-height: 1.5;">
+                    Gunakan menu ini jika printer tidak merespon atau lupa dipasang saat alat dinyalakan.
+                </p>
+            </div>
+            
+            <div class="settings-actions">
+                <button id="btnReconnectPrinter" class="btn-setting warning">
+                    <i class="fas fa-plug"></i> Hubungkan Ulang
+                </button>
+                
+                <button id="btnTestPrint" class="btn-setting primary">
+                    <i class="fas fa-file-invoice"></i> Test Print
+                </button>
+            </div>
         </div>
-    </div>
-    <div style="display: flex; align-items: flex-start;">
-        <div style="width: 180px; font-weight: 600; padding-top: 5px;">Check Bluetooth</div>
-        <div style="display: flex; flex-direction: column; gap: 10px;">
-            <div id="btStatusBadge" style="padding: 10px 20px; border: 1px solid #ccc; background: #f8f9fa; border-radius: 5px; text-align: center; min-width: 150px; font-weight: 500;">Status: Checking...</div>
-            <button id="btnResetBt" class="btn-submit" style="background-color: #fff; color: #dc3545; border: 1px solid #dc3545; font-weight: 500;">Reset Bluetooth</button>
+
+        <div class="settings-card bluetooth">
+            <div>
+                <div class="settings-header">
+                    <div class="settings-icon-wrapper">
+                        <i class="fab fa-bluetooth-b"></i>
+                    </div>
+                    <div class="settings-title">
+                        <h4>Koneksi Bluetooth</h4>
+                    </div>
+                </div>
+                <p style="font-size: 0.9rem; color: #666; line-height: 1.5;">
+                    Gunakan fungsi ini saat koneksi Bluetooth terputus atau tidak merespon.
+                </p>
+            </div>
+            
+            <div class="settings-actions">
+                <div id="btStatusBadge" class="btn-setting warning"  style="padding: 10px 20px; border: 1px solid #ccc; background: #f8f9fa; border-radius: 5px; text-align: center; min-width: 150px; font-weight: 500;">Status: Checking...</div>
+                <button id="btnResetBt" class="btn-setting primary" style="background-color: #fff; color: #dc3545; border: 1px solid #dc3545; font-weight: 500;">Reset Bluetooth</button>
+            </div>
         </div>
     </div>
 </div>
@@ -203,16 +239,58 @@ $(document).ready(function() {
         });
     }
 
+    $('#btnReconnectPrinter').click(function() {
+        const btn = $(this);
+        const oriText = btn.html();
+        
+        btn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Menghubungkan...');
+        
+        $.ajax({
+            url: '/api/debug/restart_printer',
+            method: 'POST',
+            success: function(res) {
+                if(res.status === 'success') {
+                    alert("Sukses: " + res.message);
+                } else {
+                    alert("Gagal: " + res.message);
+                }
+            },
+            error: function(err) {
+                alert("Terjadi kesalahan sistem saat restart printer.");
+            },
+            complete: function() {
+                btn.prop('disabled', false).html(oriText);
+            }
+        });
+    });
+
     // 2. HARDWARE: PRINTER
-    $('#btnPrintDummy').click(function() {
-        let btn = $(this);
-        let ori = btn.html();
-        btn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Printing...');
-        $.post('/api/hardware/test_print', function(res) {
-            alert(res.message);
-        }).fail(function(e) { 
-            alert("Error: " + (e.responseJSON ? e.responseJSON.message : "Gagal print")); 
-        }).always(() => btn.prop('disabled', false).html(ori));
+    $('#btnTestPrint').click(function() {
+        const btn = $(this);
+        const originalText = btn.html();
+        
+        // Ubah tombol jadi loading
+        btn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Mencetak...');
+        
+        $.ajax({
+            url: '/api/debug/test_print', // Panggil route baru tadi
+            method: 'POST',
+            success: function(res) {
+                if(res.status === 'success') {
+                    alert("Sukses: " + res.message);
+                } else {
+                    alert("Gagal: " + res.message);
+                }
+            },
+            error: function(xhr) {
+                let msg = xhr.responseJSON ? xhr.responseJSON.message : "Terjadi kesalahan sistem.";
+                alert("Error: " + msg);
+            },
+            complete: function() {
+                // Kembalikan tombol seperti semula
+                btn.prop('disabled', false).html(originalText);
+            }
+        });
     });
 
     // 3. HARDWARE: BLUETOOTH
