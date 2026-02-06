@@ -152,6 +152,10 @@
 
         <div class="form-row" style="display: flex; gap: 20px; margin-bottom: 15px;">
             <div class="form-group" style="flex: 1;">
+                <p style="margin: 0; color: #666; font-size: 0.9rem;">Tanggal Lahir</p>
+                <p style="margin: 0; font-weight: bold;"><span id="bio_tanggal">-</span></p>
+            </div>
+            <div class="form-group" style="flex: 1;">
                 <p style="margin: 0; color: #666; font-size: 0.9rem;">Umur</p>
                 <p style="margin: 0; font-weight: bold;"><span id="bio_umur">-</span></p>
             </div>
@@ -159,18 +163,18 @@
                 <p style="margin: 0; color: #666; font-size: 0.9rem;">Provinsi</p>
                 <p style="margin: 0; font-weight: bold;"><span id="bio_provinsi">-</span></p>
             </div>
+        </div>
+
+        <div class="form-row" style="display: flex; gap: 20px;">
              <div class="form-group" style="flex: 1;">
                 <p style="margin: 0; color: #666; font-size: 0.9rem;">Kecamatan</p>
                 <p style="margin: 0; font-weight: bold;"><span id="bio_kecamatan">-</span></p>
             </div>
-        </div>
-
-        <div class="form-row" style="display: flex; gap: 20px;">
             <div class="form-group" style="flex: 1;">
                 <p style="margin: 0; color: #666; font-size: 0.9rem;">Kelurahan</p>
                 <p style="margin: 0; font-weight: bold;"><span id="bio_kelurahan">-</span></p>
             </div>
-            <div class="form-group" style="flex: 2;">
+            <div class="form-group" style="flex: 1;">
                 <p style="margin: 0; color: #666; font-size: 0.9rem;">Alamat Lengkap</p>
                 <p style="margin: 0; font-weight: bold;"><span id="bio_alamat">-</span></p>
             </div>
@@ -397,6 +401,7 @@
                 const bio = data.biodata;
                 $('#bio_nama').text(bio.nama);
                 $('#bio_nik').text(bio.nik);
+                $('#bio_tanggal').text(bio.tanggal_lahir);
                 $('#bio_umur').text(bio.umur);
                 $('#bio_jenis_kelamin').text(bio.jenis_kelamin);
                 $('#bio_alamat').text(bio.alamat);

@@ -1375,7 +1375,8 @@ def get_patient_measurements(patient_id):
     biodata = {
         'nama': p_row[0], 'nik': p_row[1], 'jenis_kelamin': p_row[2], 'alamat': p_row[3],
         'umur': umur_display, 'no_hp': p_row[5], 'email': p_row[6],
-        'provinsi': p_row[7], 'kecamatan': p_row[8], 'kelurahan': p_row[9] # <--- BARU
+        'provinsi': p_row[7], 'kecamatan': p_row[8], 'kelurahan': p_row[9], # <--- BARU
+        'tanggal_lahir': tgl_lahir.strftime('%d-%m-%Y') if tgl_lahir else '-'
     }
 
     # 2. Ambil History Pengukuran (Filter Tanggal jika ada)
