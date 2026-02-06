@@ -90,8 +90,14 @@
 <script>
 $(document).ready(function() {
     
-    // Fungsi Autocomplete Cerdas
-    function setupAutocomplete(inputId, listId, category) {
+    /**
+     * Fungsi Autocomplete Wilayah Pintar
+     * @param {string} inputId      ID Input (misal #inputKelurahan)
+     * @param {string} listId       ID List Container (misal #listKelurahan)
+     * @param {string} category     Kategori ('kelurahan', 'kecamatan', 'provinsi')
+     * @param {string} filterInputId (Opsional) ID Input Induk untuk filter (misal #inputKecamatan)
+     */
+    function setupAutocomplete(inputId, listId, category, filterInputId = null) {
         const $input = $(inputId);
         const $list = $(listId);
         let timeout = null;
@@ -109,18 +115,31 @@ $(document).ready(function() {
             clearTimeout(timeout);
             timeout = setTimeout(function() {
                 
-                $.getJSON('/api/search_wilayah', { category: category, q: val })
+                // 1. Siapkan Parameter Request
+                let params = { category: category, q: val };
+                
+                // 2. Cek apakah ada Filter Induk (Khusus Kelurahan)
+                if (filterInputId) {
+                    const parentVal = $(filterInputId).val();
+                    if (parentVal) {
+                        // Kirim nama kecamatan ke backend untuk memfilter hasil
+                        params.parent_name = parentVal;
+                        console.log(`Filter Kelurahan berdasarkan Kecamatan: ${parentVal}`);
+                    }
+                }
+
+                // 3. Panggil API
+                $.getJSON('/api/search_wilayah', params)
                 .done(function(data) {
                     $list.empty();
                     
                     if (data.length > 0) {
-                        
                         data.forEach(item => {
-                            // Highlight text yang cocok
+                            // Highlight teks
                             let regex = new RegExp(`(${val})`, "gi");
                             let displayName = item.nama.replace(regex, "<strong>$1</strong>");
                             
-                            // Jika ini pencarian Kelurahan, tampilkan juga nama Kecamatannya di list
+                            // Info tambahan (misal nama Kecamatannya)
                             let subText = "";
                             if (category === 'kelurahan' && item.kecamatan) {
                                 subText = `<br><small style="color:#666; font-size:0.8em;">Kec. ${item.kecamatan}</small>`;
@@ -128,23 +147,18 @@ $(document).ready(function() {
 
                             const $itemDiv = $("<div>").addClass("ac-item").html(displayName + subText);
                             
-                            // --- LOGIKA KLIK ITEM ---
                             $itemDiv.on("click", function() {
-                                // 1. Isi input yang sedang diketik
-                                $input.val(item.nama);
+                                $input.val(item.nama); // Isi input
                                 
-                                // 2. FITUR SPESIAL: Auto-fill Kecamatan jika memilih Kelurahan
-                                if (category === 'kelurahan' && item.kecamatan) {
-                                    // Isi kolom kecamatan otomatis
-                                    $('#inputKecamatan').val(item.kecamatan);
-                                    
-                                    // Efek visual (kedip kuning) agar user sadar kolom terisi otomatis
-                                    $('#inputKecamatan').css('background-color', '#fff3cd')
-                                        .animate({ backgroundColor: "#ffffff" }, 1000, function() {
-                                            $(this).css('background-color', ''); 
-                                        });
+                                // LOGIKA AUTO-FILL (Opsional: Jika user pilih Kelurahan, Kecamatan otomatis terisi juga)
+                                if (category === 'kelurahan' && item.kecamatan && filterInputId) {
+                                    // Hanya isi kecamatan jika kecamatan masih kosong
+                                    if ($(filterInputId).val() === "") {
+                                        $(filterInputId).val(item.kecamatan).css('background-color', '#fff3cd')
+                                            .animate({ backgroundColor: "#ffffff" }, 1000);
+                                    }
                                 }
-
+                                
                                 $list.hide().empty();
                             });
                             
@@ -152,7 +166,12 @@ $(document).ready(function() {
                         });
                         $list.show(); 
                     } else {
-                        $list.hide(); 
+                        // Pesan jika tidak ditemukan
+                        let msg = "Data tidak ditemukan";
+                        if (filterInputId && $(filterInputId).val()) {
+                            msg = `Tidak ada di Kec. ${$(filterInputId).val()}`;
+                        }
+                        $list.html(`<div class="ac-item" style="color:#dc3545; cursor:default; font-style:italic;">${msg}</div>`).show();
                     }
                 })
                 .fail(function() { console.error("API Error"); })
@@ -161,7 +180,7 @@ $(document).ready(function() {
             }, 300); 
         });
 
-        // Klik luar tutup list
+        // Tutup list saat klik di luar
         $(document).on("click", function(e) {
             if (!$input.is(e.target) && !$list.is(e.target) && $list.has(e.target).length === 0) {
                 $list.hide();
@@ -169,10 +188,24 @@ $(document).ready(function() {
         });
     }
 
-    // Inisialisasi
+    // --- INISIALISASI ---
+    
+    // 1. Provinsi
     setupAutocomplete('#inputProvinsi', '#listProvinsi', 'provinsi');
+    
+    // 2. Kecamatan
     setupAutocomplete('#inputKecamatan', '#listKecamatan', 'kecamatan');
-    setupAutocomplete('#inputKelurahan', '#listKelurahan', 'kelurahan');
+    
+    // 3. Kelurahan (DENGAN FILTER KECAMATAN)
+    // Parameter ke-4 adalah ID input kecamatan (#inputKecamatan)
+    setupAutocomplete('#inputKelurahan', '#listKelurahan', 'kelurahan', '#inputKecamatan');
+
+    // --- UX TAMBAHAN: BERSIHKAN KELURAHAN JIKA KECAMATAN DIGANTI ---
+    // Agar data tetap konsisten, jika user mengganti nama kecamatan, 
+    // hapus isi kelurahan agar user memilih ulang.
+    $('#inputKecamatan').on('change', function() {
+        $('#inputKelurahan').val('');
+    });
 
 });
 </script>

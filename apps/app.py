@@ -913,15 +913,17 @@ def wifi_connect():
     
 
 # --- 7. API PENCARIAN WILAYAH (AUTOCOMPLETE) ---
-# --- 7. API PENCARIAN WILAYAH (AUTOCOMPLETE CERDAS) ---
+# --- 7. API PENCARIAN WILAYAH (FILTER KECAMATAN -> KELURAHAN) ---
 @app.route('/api/search_wilayah')
 def search_wilayah():
-    if g.user is None: return jsonify([])
+    # if g.user is None: return jsonify([]) # Opsional, nyalakan jika perlu login
     
     category = request.args.get('category') 
     query = request.args.get('q', '')
+    parent_name = request.args.get('parent_name', '') # Nama Kecamatan yang dipilih user
     
-    if len(query) < 2: return jsonify([]) # Minimal 2 huruf
+    # Minimal ketik 1 huruf agar responsif
+    if len(query) < 1: return jsonify([]) 
 
     conn = get_db_connection()
     cur = conn.cursor()
@@ -930,32 +932,43 @@ def search_wilayah():
     
     try:
         if category == 'kelurahan':
-            # --- LOGIKA KHUSUS KELURAHAN (JOIN KECAMATAN) ---
-            # Kita ambil Nama Kelurahan DAN Nama Kecamatan sekaligus
+            # Base Query: Join Kelurahan & Kecamatan
+            # Relasi: master_kelurahans.kode_parent = master_kecamatans.kode_kecamatan
             sql = """
                 SELECT k.nama, c.nama 
                 FROM master_kelurahans k
                 JOIN master_kecamatans c ON k.kode_parent = c.kode_kecamatan
                 WHERE k.nama ILIKE %s 
-                ORDER BY k.nama ASC LIMIT 15
             """
-            cur.execute(sql, (f'%{query}%',))
+            params = [f'%{query}%']
+
+            # --- LOGIKA FILTER KECAMATAN ---
+            # Jika user sudah mengisi kecamatan, filter hanya kelurahan di kecamatan itu
+            if parent_name and parent_name.strip() != "":
+                sql += " AND c.nama ILIKE %s "
+                # Gunakan ILIKE agar tidak sensitif huruf besar/kecil
+                params.append(parent_name.strip())
+
+            sql += " ORDER BY k.nama ASC LIMIT 15"
+            
+            cur.execute(sql, tuple(params))
             rows = cur.fetchall()
             
-            # Format return: [{'nama': 'Bulusan', 'kecamatan': 'Tembalang'}, ...]
             for r in rows:
                 results.append({
-                    'nama': r[0],
-                    'kecamatan': r[1]  # Data tambahan untuk auto-fill
+                    'nama': r[0],      # Nama Kelurahan
+                    'kecamatan': r[1]  # Nama Kecamatan (untuk info tambahan)
                 })
 
         elif category == 'kecamatan':
+            # Cari Kecamatan biasa
             sql = "SELECT nama FROM master_kecamatans WHERE nama ILIKE %s ORDER BY nama ASC LIMIT 15"
             cur.execute(sql, (f'%{query}%',))
             rows = cur.fetchall()
             for r in rows: results.append({'nama': r[0]})
 
         elif category == 'provinsi':
+            # Cari Provinsi biasa
             sql = "SELECT nama FROM master_provinsis WHERE nama ILIKE %s ORDER BY nama ASC LIMIT 15"
             cur.execute(sql, (f'%{query}%',))
             rows = cur.fetchall()
