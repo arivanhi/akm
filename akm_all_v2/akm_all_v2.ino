@@ -10,8 +10,8 @@
 // ==========================================
 #define ledMerah 17
 #define ledIr 2
-#define ledGlu 16
-#define photoDioda 4
+#define ledPhoto 34
+#define ledGlu 4
 
 AS726X sensor;
 
@@ -19,7 +19,7 @@ AS726X sensor;
 // --- KONFIGURASI BLE OMRON ---
 // ==========================================
 // Ganti dengan MAC Address Omron Anda (Huruf kecil semua)
-String omronAddress = "00:5f:bf:bd:d0:d8"; 
+String omronAddress = "00:5f:bf:bd:d0:d8";
 
 static BLEUUID serviceUUID("1810"); // Blood Pressure Service
 static BLEUUID charUUID("2A35");    // BP Measurement Characteristic
@@ -31,6 +31,10 @@ boolean connected = false;
 boolean dataReceived = false;   // Penanda data sudah dapat
 BLERemoteCharacteristic* pRemoteCharacteristic;
 BLEAdvertisedDevice* myDevice;
+
+int signal_on = 0;
+int signal_off = 0;
+int clean_signal = 0;
 
 // Variabel Global Kontrol Utama
 int currentMeasurementType = 0; // 0=Idle, 1=Kol, 2=AU, 3=Glu, 4=Tensi
@@ -51,95 +55,101 @@ float decodeSFloat(uint8_t* data, int startIndex) {
 
 // Callback saat data masuk dari Omron
 static void notifyCallback(BLERemoteCharacteristic* pBLERemoteCharacteristic, uint8_t* pData, size_t length, bool isNotify) {
-    if (length < 2) return;
+  if (length < 2) return;
 
-    uint8_t flags = pData[0];
-    bool iskPa = flags & 0x01;
-    bool hasTimestamp = flags & 0x02;
-    bool hasPulse = flags & 0x04;
+  uint8_t flags = pData[0];
+  bool iskPa = flags & 0x01;
+  bool hasTimestamp = flags & 0x02;
+  bool hasPulse = flags & 0x04;
 
-    int index = 1;
-    float sys = decodeSFloat(pData, index); index+=2;
-    float dia = decodeSFloat(pData, index); index+=2;
-    float map = decodeSFloat(pData, index); index+=2;
+  int index = 1;
+  float sys = decodeSFloat(pData, index); index += 2;
+  float dia = decodeSFloat(pData, index); index += 2;
+  float map = decodeSFloat(pData, index); index += 2;
 
-    if (hasTimestamp) index += 7;
+  if (hasTimestamp) index += 7;
 
-    float pulse = 0;
-    if (hasPulse) pulse = decodeSFloat(pData, index);
+  float pulse = 0;
+  if (hasPulse) pulse = decodeSFloat(pData, index);
 
-    // Format kirim ke Python: "tensi:sys,dia,pulse"
-    String output = "tensi:" + String(sys, 0) + "," + String(dia, 0) + "," + String(pulse, 0);
-    Serial.println(output);
+  // Format kirim ke Python: "tensi:sys,dia,pulse"
+  String output = "tensi:" + String(sys, 0) + "," + String(dia, 0) + "," + String(pulse, 0);
+  Serial.println(output);
 
-    // Tandai selesai agar loop memutus koneksi
-    dataReceived = true; 
+  // Tandai selesai agar loop memutus koneksi
+  dataReceived = true;
 }
 
 // Security Callback (Auto Pair)
 class MySecurity : public BLESecurityCallbacks {
-  uint32_t onPassKeyRequest(){ return 000000; }
-  void onPassKeyNotify(uint32_t pass_key){}
-  bool onConfirmPIN(uint32_t pass_key){ return true; }
-  bool onSecurityRequest(){ return true; }
-  void onAuthenticationComplete(esp_ble_auth_cmpl_t cmpl){}
+    uint32_t onPassKeyRequest() {
+      return 000000;
+    }
+    void onPassKeyNotify(uint32_t pass_key) {}
+    bool onConfirmPIN(uint32_t pass_key) {
+      return true;
+    }
+    bool onSecurityRequest() {
+      return true;
+    }
+    void onAuthenticationComplete(esp_ble_auth_cmpl_t cmpl) {}
 };
 
 // Client Callback
 class MyClientCallback : public BLEClientCallbacks {
-  void onConnect(BLEClient* pclient) {}
-  void onDisconnect(BLEClient* pclient) {
-    connected = false;
-    // Serial.println("BLE Disconnected");
-  }
+    void onConnect(BLEClient* pclient) {}
+    void onDisconnect(BLEClient* pclient) {
+      connected = false;
+      // Serial.println("BLE Disconnected");
+    }
 };
 
 // Scan Callback
 class MyAdvertisedDeviceCallbacks: public BLEAdvertisedDeviceCallbacks {
-  void onResult(BLEAdvertisedDevice advertisedDevice) {
-    String devAddr = advertisedDevice.getAddress().toString().c_str();
-    devAddr.toLowerCase(); 
-    if (devAddr == omronAddress) {
-      BLEDevice::getScan()->stop();
-      myDevice = new BLEAdvertisedDevice(advertisedDevice);
-      doConnect = true;
+    void onResult(BLEAdvertisedDevice advertisedDevice) {
+      String devAddr = advertisedDevice.getAddress().toString().c_str();
+      devAddr.toLowerCase();
+      if (devAddr == omronAddress) {
+        BLEDevice::getScan()->stop();
+        myDevice = new BLEAdvertisedDevice(advertisedDevice);
+        doConnect = true;
+      }
     }
-  }
 };
 
 // Fungsi Koneksi BLE
 bool connectToOmron() {
-    BLEClient* pClient  = BLEDevice::createClient();
-    pClient->setClientCallbacks(new MyClientCallback());
+  BLEClient* pClient  = BLEDevice::createClient();
+  pClient->setClientCallbacks(new MyClientCallback());
 
-    if (!pClient->connect(myDevice)) return false;
-    pClient->secureConnection();
+  if (!pClient->connect(myDevice)) return false;
+  pClient->secureConnection();
 
-    BLERemoteService* pRemoteService = pClient->getService(serviceUUID);
-    if (pRemoteService == nullptr) {
-      pClient->disconnect();
-      return false;
-    }
+  BLERemoteService* pRemoteService = pClient->getService(serviceUUID);
+  if (pRemoteService == nullptr) {
+    pClient->disconnect();
+    return false;
+  }
 
-    pRemoteCharacteristic = pRemoteService->getCharacteristic(charUUID);
-    if (pRemoteCharacteristic == nullptr) {
-      pClient->disconnect();
-      return false;
-    }
+  pRemoteCharacteristic = pRemoteService->getCharacteristic(charUUID);
+  if (pRemoteCharacteristic == nullptr) {
+    pClient->disconnect();
+    return false;
+  }
 
-    // Force Enable Indication (Magic Fix)
-    BLERemoteDescriptor* p2902 = pRemoteCharacteristic->getDescriptor(BLEUUID((uint16_t)0x2902));
-    if (p2902 != nullptr) {
-      uint8_t val[] = {0x02, 0x00}; 
-      p2902->writeValue(val, 2, true);
-    }
+  // Force Enable Indication (Magic Fix)
+  BLERemoteDescriptor* p2902 = pRemoteCharacteristic->getDescriptor(BLEUUID((uint16_t)0x2902));
+  if (p2902 != nullptr) {
+    uint8_t val[] = {0x02, 0x00};
+    p2902->writeValue(val, 2, true);
+  }
 
-    if(pRemoteCharacteristic->canIndicate() || pRemoteCharacteristic->canNotify()) {
-      pRemoteCharacteristic->registerForNotify(notifyCallback);
-    }
+  if (pRemoteCharacteristic->canIndicate() || pRemoteCharacteristic->canNotify()) {
+    pRemoteCharacteristic->registerForNotify(notifyCallback);
+  }
 
-    connected = true;
-    return true;
+  connected = true;
+  return true;
 }
 
 // ==========================================
@@ -153,10 +163,63 @@ void TCA9548A(uint8_t bus) {
 }
 
 int glukosa() {
-  int read;
+  // ---------------------------------------------------------
+  // 1. FASE ON: Ambil sampel saat LED menyala
+  // ---------------------------------------------------------
   digitalWrite(ledGlu, HIGH);
-  delay(50);
-  read = analogRead(photoDioda);
+
+  int read;
+
+  // Tunggu sebentar agar LED menyala penuh dan slew-rate OPA380 stabil.
+  // OPA380 sangat cepat, jadi 500 mikrodetik sudah lebih dari cukup.
+  delayMicroseconds(500);
+
+  // Baca ADC (Sinyal Inframerah + Noise Ruangan)
+  signal_on = analogRead(ledPhoto);
+
+  // ---------------------------------------------------------
+  // 2. FASE OFF: Ambil sampel saat LED mati
+  // ---------------------------------------------------------
+  digitalWrite(ledGlu, LOW);
+
+  // Tunggu agar sisa cahaya benar-benar hilang dan kapasitansi stabil
+  delayMicroseconds(500);
+
+  // Baca ADC (Murni Noise Cahaya Ruangan / Ambient Light)
+  signal_off = analogRead(ledPhoto);
+
+  // ---------------------------------------------------------
+  // 3. PEMROSESAN SINYAL SINKRON
+  // ---------------------------------------------------------
+  // Kurangi sinyal campuran dengan noise ruangan untuk mendapat sinyal asli
+  clean_signal = signal_on - signal_off;
+
+  // Jika nilai negatif (biasanya karena fluktuasi noise ekstrem), jadikan 0
+  if (clean_signal < 0) {
+    clean_signal = 0;
+  }
+  read = clean_signal;
+
+  // ---------------------------------------------------------
+  // 4. TAMPILKAN KE SERIAL PLOTTER
+  // ---------------------------------------------------------
+  // Format print agar bisa dibaca berlapis oleh Serial Plotter Arduino
+  // Serial.print("Raw_ON:");
+  // Serial.print(signal_on);
+  // Serial.print(",");
+
+  // Serial.print("Ambient_OFF:");
+  // Serial.print(signal_off);
+  // Serial.print(",");
+
+  // Serial.print("Clean_Signal:");
+  // Serial.println(clean_signal);
+
+  // Delay untuk menentukan sampling rate akhir (opsional).
+  // Sampling rate 50-100Hz sudah sangat baik untuk melihat gelombang detak jantung (PPG).
+  // 20ms delay = ~50 Hz sampling rate.
+  delay(20);
+
   return read;
 }
 
@@ -177,8 +240,13 @@ String kolesterol() {
   digitalWrite(ledIr, HIGH);
   TCA9548A(3);
   sensor.takeMeasurements();
-  float r = sensor.getCalibratedR();
-  return String(r);
+  String data = String(sensor.getCalibratedR()) + "," +
+                String(sensor.getCalibratedS()) + "," +
+                String(sensor.getCalibratedT()) + "," +
+                String(sensor.getCalibratedU()) + "," +
+                String(sensor.getCalibratedV()) + "," +
+                String(sensor.getCalibratedW());
+  return String(data);
 }
 
 // ==========================================
@@ -188,7 +256,7 @@ String kolesterol() {
 void setup() {
   Wire.begin();
   Serial.begin(115200);
-  analogReadResolution(8); // Untuk Glukosa
+  analogReadResolution(10); // Untuk Glukosa
 
   pinMode(ledMerah, OUTPUT);
   pinMode(ledIr, OUTPUT);
@@ -206,7 +274,7 @@ void setup() {
   pSecurity->setInitEncryptionKey(ESP_BLE_ENC_KEY_MASK | ESP_BLE_ID_KEY_MASK);
   pSecurity->setRespEncryptionKey(ESP_BLE_ENC_KEY_MASK | ESP_BLE_ID_KEY_MASK);
   BLEDevice::setSecurityCallbacks(new MySecurity());
-  
+
   BLEScan* pBLEScan = BLEDevice::getScan();
   pBLEScan->setAdvertisedDeviceCallbacks(new MyAdvertisedDeviceCallbacks());
   pBLEScan->setActiveScan(true);
@@ -225,11 +293,13 @@ void loop() {
 
     if (flag >= 0 && flag <= 4) {
       currentMeasurementType = flag;
-      
+
       // Reset status BLE jika pindah mode
       if (flag != 4) {
         bleActive = false;
-        if(connected) { /* logic disconnect manual jika perlu */ }
+        if (connected) {
+          /* logic disconnect manual jika perlu */
+        }
       } else {
         // Jika Flag == 4, Reset variabel BLE untuk memulai scan baru
         bleActive = true;
@@ -243,45 +313,45 @@ void loop() {
 
   // 2. LOGIKA STATE
   if (currentMeasurementType != 0) {
-    
+
     // --- MODE SENSOR OPTIK (1, 2, 3) ---
     if (currentMeasurementType >= 1 && currentMeasurementType <= 3) {
-       String dataType, value;
-       switch (currentMeasurementType) {
-          case 1: dataType = "cholesterol"; value = kolesterol(); break;
-          case 2: dataType = "asam_urat"; value = asamUrat(); break;
-          case 3: dataType = "gula_darah"; value = String(glukosa()); delay(100); break;
-       }
-       Serial.println(dataType + ":" + value);
+      String dataType, value;
+      switch (currentMeasurementType) {
+        case 1: dataType = "cholesterol"; value = kolesterol(); break;
+        case 2: dataType = "asam_urat"; value = asamUrat(); break;
+        case 3: dataType = "gula_darah"; value = String(glukosa()); delay(100); break;
+      }
+      Serial.println(dataType + ":" + value);
     }
-    
+
     // --- MODE TENSIMETER (4) ---
     else if (currentMeasurementType == 4 && bleActive) {
-       // Jika data sudah diterima, kirim sinyal stop/reset dan matikan mode
-       if (dataReceived) {
-          bleActive = false;
-          currentMeasurementType = 0; // Kembali ke Idle
-          // Kita tidak perlu kirim apa-apa lagi karena data sudah dikirim di notifyCallback
-          // Cukup pastikan scan berhenti
-          return; 
-       }
+      // Jika data sudah diterima, kirim sinyal stop/reset dan matikan mode
+      if (dataReceived) {
+        bleActive = false;
+        currentMeasurementType = 0; // Kembali ke Idle
+        // Kita tidak perlu kirim apa-apa lagi karena data sudah dikirim di notifyCallback
+        // Cukup pastikan scan berhenti
+        return;
+      }
 
-       // Logika Koneksi BLE
-       if (doConnect) {
-          if (connectToOmron()) {
-             // Serial.println("Connected to Omron! Press Sync Button.");
-          } else {
-             // Serial.println("Connect Failed");
-          }
-          doConnect = false;
-       }
+      // Logika Koneksi BLE
+      if (doConnect) {
+        if (connectToOmron()) {
+          // Serial.println("Connected to Omron! Press Sync Button.");
+        } else {
+          // Serial.println("Connect Failed");
+        }
+        doConnect = false;
+      }
 
-       // Jika belum konek dan belum dapat data, lakukan SCAN
-       if (!connected) {
-          BLEScan* pBLEScan = BLEDevice::getScan();
-          pBLEScan->start(1, false); // Scan singkat 1 detik
-          pBLEScan->clearResults();
-       }
+      // Jika belum konek dan belum dapat data, lakukan SCAN
+      if (!connected) {
+        BLEScan* pBLEScan = BLEDevice::getScan();
+        pBLEScan->start(1, false); // Scan singkat 1 detik
+        pBLEScan->clearResults();
+      }
     }
 
   } else {
