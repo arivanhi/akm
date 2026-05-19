@@ -200,24 +200,6 @@ int glukosa() {
   }
   read = clean_signal;
 
-  // ---------------------------------------------------------
-  // 4. TAMPILKAN KE SERIAL PLOTTER
-  // ---------------------------------------------------------
-  // Format print agar bisa dibaca berlapis oleh Serial Plotter Arduino
-  // Serial.print("Raw_ON:");
-  // Serial.print(signal_on);
-  // Serial.print(",");
-
-  // Serial.print("Ambient_OFF:");
-  // Serial.print(signal_off);
-  // Serial.print(",");
-
-  // Serial.print("Clean_Signal:");
-  // Serial.println(clean_signal);
-
-  // Delay untuk menentukan sampling rate akhir (opsional).
-  // Sampling rate 50-100Hz sudah sangat baik untuk melihat gelombang detak jantung (PPG).
-  // 20ms delay = ~50 Hz sampling rate.
   delay(20);
 
   return read;
@@ -318,9 +300,14 @@ void loop() {
     if (currentMeasurementType >= 1 && currentMeasurementType <= 3) {
       String dataType, value;
       switch (currentMeasurementType) {
-        case 1: dataType = "cholesterol"; value = kolesterol(); break;
-        case 2: dataType = "asam_urat"; value = asamUrat(); break;
-        case 3: dataType = "gula_darah"; value = String(glukosa()); delay(100); break;
+        case 1: dataType = "cholesterol"; 
+          value = kolesterol(); break;
+        case 2: dataType = "asam_urat"; 
+          value = asamUrat(); break;
+        case 3: dataType = "gula_darah"; 
+          value = String(glukosa()); 
+          delay(500); 
+          break;
       }
       Serial.println(dataType + ":" + value);
     }
