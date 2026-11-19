@@ -281,7 +281,7 @@ def on_message(client, userdata, msg):
             hasil_akhir = 0.0
 
             # --- LAKUKAN PREDIKSI ---
-            if (data_type=='asam_urat' or data_type=='cholesterol') in models_xgb and (data_type=='asam_urat' or data_type=='cholesterol') in models_knn:
+            if data_type in ['asam_urat', 'cholesterol'] and data_type in models_xgb and data_type in models_knn:
                 # Prediksi XGBoost
                 pred_xgb = models_xgb[data_type].predict(data_input)[0]
                 
@@ -292,7 +292,8 @@ def on_message(client, userdata, msg):
                 hasil_akhir = (pred_xgb + pred_knn) / 2
                 
                 print(f"Prediksi {data_type} -> XGB: {pred_xgb:.2f}, KNN: {pred_knn:.2f}, Avg: {hasil_akhir:.2f}")
-            elif data_type == 'gula_darah' in models_knn:
+                
+            elif data_type == 'gula_darah' and data_type in models_knn:
                 input_array = np.array(data_input).reshape(1, -1)
                 hasil_prediksi = models_knn['gula_darah'].predict(input_array)
                 kadar_glukosa = hasil_prediksi[0]

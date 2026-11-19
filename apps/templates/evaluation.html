@@ -2,12 +2,61 @@
 {% block title %}Laporan Evaluasi AI - Sistem Monitoring Kesehatan{% endblock %}
 
 {% block content %}
+<style>
+    @media print {
+        /* 1. Matikan paksa penyembunyian global dari style.css lama */
+        body * {
+            visibility: hidden !important;
+        }
+        /* 2. Aktifkan hanya area utama laporan evaluasi */
+        #content, #content * {
+            visibility: visible !important;
+        }
+        /* 3. Sembunyikan elemen navigasi dashboard agar tidak ikut tercetak */
+        .sidebar, .navbar, .header-actions, .text-muted, #sidebarCollapse {
+            display: none !important;
+        }
+        /* 4. Atur posisi halaman agar presisi penuh ke kertas */
+        #content {
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 100%;
+            margin: 0 !important;
+            padding: 0 !important;
+        }
+        .content-area {
+            margin: 0 !important;
+            padding: 0 !important;
+            box-shadow: none !important;
+            background: transparent !important;
+        }
+        /* 5. Cegah card terpotong di tengah halaman jika beda halaman kertas */
+        .eval-card {
+            page-break-inside: avoid !important;
+            border: 1px solid #ddd !important;
+            box-shadow: none !important;
+            margin-bottom: 25px !important;
+        }
+        /* 6. Memaksa browser mencetak warna gradasi header card */
+        .eval-header {
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+        }
+    }
+</style>
+
 <div class="page-header">
     <h1 class="page-title"><i class="fas fa-microchip"></i> Laporan Kinerja Model AI</h1>
-    <p class="text-muted" style="margin-top: -15px; margin-bottom: 25px;">
-        Dokumen rahasia evaluasi internal algoritma <em>Non-Invasive</em> Koper Sakti berbasis data pengujian riil.
-    </p>
+    <div class="header-actions">
+        <button onclick="window.print()" class="btn-export-all" style="background-color: #17a2b8; border-color: #17a2b8;">
+            <i class="fas fa-print"></i> Cetak Laporan
+        </button>
+    </div>
 </div>
+<p class="text-muted" style="margin-top: -25px; margin-bottom: 25px;">
+    Dokumen rahasia evaluasi internal algoritma <em>Non-Invasive</em> Koper Sakti berbasis data pengujian riil.
+</p>
 
 <div class="eval-card theme-gula">
     <div class="eval-header" style="display: flex; justify-content: space-between; align-items: center;">
